@@ -133,6 +133,7 @@ def _sekvenca_po_sadrzajima(stavke: list[str], o: int, u: int) -> list[NastavnaJ
     obrade = _najveci_ostatak([1.0] * len(stavke), o)
     utvrde = _najveci_ostatak([float(x) for x in obrade], u) if u else [0] * len(stavke)
     niz: list[NastavnaJedinica] = []
+    stavke = [s[:1].upper() + s[1:] for s in stavke]
     for st, no, nu in zip(stavke, obrade, utvrde):
         for i in range(no):
             niz.append(NastavnaJedinica(naziv=st if i == 0 else f"{st} (наставак)" if _cir(st) else f"{st} (nastavak)",

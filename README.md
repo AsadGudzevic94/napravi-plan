@@ -36,10 +36,18 @@ Cilj, arhitektura i plan razvoja: **[docs/PLAN.md](docs/PLAN.md)**
 uputstva iz glasnika (citat), ishodi iz glasnika i logička pravila (gde se sadržaj primenjuje, uključujući
 stručne predmete profila); svaki predlog ima izvor i obrazloženje i nastavnik ga potvrđuje.
 
+## Objava na internetu
+Besplatno na Streamlit Community Cloud — uputstvo korak po korak (radi i sa telefona): **[docs/OBJAVA.md](docs/OBJAVA.md)**.
+
+## Izgled
+Miran, „papirni“ izgled: topla bela pozadina, tamno mastilo i jedna prigušena zelenkasto-siva boja za
+akcente; serifni naslovi (Literata), čitljiv tekst (Source Sans 3), tabele bez mreže boja. Tema je u
+`.streamlit/config.toml`, stil u `ui/stil.css`.
+
 ## Pokretanje
 ```bash
-pip install -r requirements.txt
-cp .env.example .env        # upišite BESPLATAN ključ (Groq ili Gemini)
+pip install -r requirements-dev.txt
+cp .env.example .env        # upišite BESPLATAN ključ (Groq ili Gemini) — ili .streamlit/secrets.toml
 streamlit run app.py
 ```
 Radi i bez ključa (generički nazivi jedinica, bez čitanja PDF-a) — dobro za probu: napišite `primer`.

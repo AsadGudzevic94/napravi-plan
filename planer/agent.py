@@ -99,9 +99,7 @@ class Agent:
         poruke += self._automatski_koraci()
         if self.gotovo:
             return "\n\n".join(poruke)
-        sledece = self.iv.pitanje()
-        broj = len(self.iv.zavrseno) + 1
-        return "\n\n".join(poruke + [f"**Korak {broj}** — {sledece}"])
+        return "\n\n".join(poruke + [self.iv.pitanje()])
 
     # ------------------------------------------------------------ razumevanje nastavnika
     def _razumi(self, tekst: str) -> list[str]:

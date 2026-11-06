@@ -1,0 +1,18 @@
+# Izgled: papir, mastilo i jedna prigušena boja (zelenkasto-siva) za akcente.
+[theme]
+base = "light"
+primaryColor = "#4A6356"
+backgroundColor = "#FAF9F6"
+secondaryBackgroundColor = "#F1EFE9"
+textColor = "#24251F"
+font = "sans serif"
+
+[client]
+toolbarMode = "minimal"
+showSidebarNavigation = false
+
+[browser]
+gatherUsageStats = false
+
+[server]
+maxUploadSize = 50
