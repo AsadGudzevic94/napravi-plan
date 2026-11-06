@@ -1,0 +1,415 @@
+"""Razgovor sa nastavnikom: kod vodi listu pitanja (ništa se ne preskoči),
+a LLM se koristi samo da protumači slobodan odgovor kada ga kod ne razume.
+"""
+from __future__ import annotations
+
+import json
+import re
+from dataclasses import dataclass, field
+from datetime import date
+from pathlib import Path
+from typing import Any, Callable
+
+from .ekstrakcija import normalizuj
+from .kalendar import slotovi_casova
+from .llm import LLM, LLMGreska
+from .modeli import DANI, Program, Raspust, SkolskiKalendar, Tema
+from .podrazumevani_kalendar import kalendar_za
+from .raspodela import napravi_plan
+
+DATA = Path(__file__).resolve().parent.parent / "data"
+
+# ---------------------------------------------------------------- parseri odgovora
+
+
+def _da_ne(t: str) -> bool | None:
+    n = normalizuj(t).strip(" .!")
+    if n in {"da", "d", "yes", "y", "ok", "moze", "tacno", "potvrdjujem", "jeste", "u redu", "uredu"}:
+        return True
+    if n in {"ne", "n", "no", "nije"}:
+        return False
+    return None
+
+
+def parsiraj_tip(t: str, s: "Stanje") -> str:
+    n = normalizuj(t)
+    if "osnov" in n or n.strip() == "o":
+        return "osnovna"
+    if "sredn" in n or n.strip() == "s" or "gimnaz" in n or "strucn" in n:
+        return "srednja"
+    raise ValueError("Napišite „osnovna“ ili „srednja“.")
+
+
+def parsiraj_razred(t: str, s: "Stanje") -> int:
+    n = normalizuj(t)
+    rimski = {"viii": 8, "vii": 7, "vi": 6, "iv": 4, "v": 5, "iii": 3, "ii": 2, "i": 1}
+    m = re.search(r"\d+", n)
+    r = int(m.group()) if m else next((v for k, v in rimski.items() if re.search(rf"\b{k}\b", n)), None)
+    maks = 8 if s.get("tip_skole") == "osnovna" else 4
+    if not r or not 1 <= r <= maks:
+        raise ValueError(f"Razred mora biti broj od 1 do {maks}.")
+    return r
+
+
+def parsiraj_tekst(t: str, s: "Stanje") -> str:
+    t = t.strip()
+    if len(t) < 2:
+        raise ValueError("Odgovor je prekratak.")
+    return t
+
+
+def parsiraj_opciono(t: str, s: "Stanje") -> str:
+    t = t.strip()
+    return "" if normalizuj(t) in {"", "-", "ne", "nema", "preskoci", "nista"} else t
+
+
+def parsiraj_broj(t: str, s: "Stanje") -> float:
+    m = re.search(r"\d+(?:[.,]\d+)?", t)
+    if not m:
+        raise ValueError("Upišite broj.")
+    return float(m.group().replace(",", "."))
+
+
+def parsiraj_ceo(t: str, s: "Stanje") -> int:
+    if normalizuj(t).strip() in {"nijedna", "nijednu", "ne", "nema"}:
+        return 0
+    return int(parsiraj_broj(t, s))
+
+
+_DANI_NORM = {normalizuj(d)[:3]: i for i, d in enumerate(DANI[:5])}
+
+
+def parsiraj_raspored(t: str, s: "Stanje") -> dict[int, int]:
+    """'pon, čet' | 'ponedeljak 2, sreda 1' | 'pon uto sre čet' → {dan: broj_časova}"""
+    n = normalizuj(t)
+    raspored: dict[int, int] = {}
+    for m in re.finditer(r"(pon|uto|sre|cet|pet)[a-z]*\s*(?:[x×*:-]?\s*(\d))?(?:\s*cas[a-z]*)?", n):
+        dan = _DANI_NORM[m.group(1)]
+        raspored[dan] = raspored.get(dan, 0) + (int(m.group(2)) if m.group(2) else 1)
+    if not raspored:
+        raise ValueError("Nisam prepoznao dane. Primer: „ponedeljak i četvrtak“ ili „utorak 2, petak 1“.")
+    fond = s.get("nedeljni_fond")
+    if fond and sum(raspored.values()) != round(fond):
+        raise ValueError(f"Po rasporedu je {sum(raspored.values())} čas(a) nedeljno, a nedeljni fond je "
+                         f"{fond:g}. Navedite dane tako da zbir bude {fond:g} (npr. „utorak 2“ za blok čas).")
+    return raspored
+
+
+def parsiraj_godinu(t: str, s: "Stanje") -> int:
+    m = re.search(r"(20\d\d)", t)
+    if not m:
+        raise ValueError("Napišite školsku godinu, npr. 2026/27.")
+    return int(m.group(1))
+
+
+def parsiraj_teme_tekst(t: str) -> list[Tema]:
+    """Redovi oblika 'Naziv teme ; 30' ili 'Naziv teme ; 20 ; 10' (obrada ; utvrđivanje)."""
+    teme = []
+    for red in t.splitlines():
+        delovi = [d.strip() for d in re.split(r"[;|\t]", red) if d.strip()]
+        if len(delovi) < 2 or not delovi[1].isdigit():
+            continue
+        o = int(delovi[1])
+        u = int(delovi[2]) if len(delovi) > 2 and delovi[2].isdigit() else 0
+        teme.append(Tema(redni_broj=len(teme) + 1, naziv=delovi[0], casova_obrada=o, casova_utvrdjivanje=u))
+    return teme
+
+
+def ucitaj_primer() -> Program:
+    return Program.model_validate(json.loads((DATA / "program_primer_matematika_5.json").read_text(encoding="utf-8")))
+
+
+def parsiraj_program(t: str, s: "Stanje") -> Program:
+    if normalizuj(t).strip() in {"primer", "demo"}:
+        return ucitaj_primer()
+    teme = parsiraj_teme_tekst(t)
+    if not teme:
+        raise ValueError("Pošaljite PDF glasnika, napišite „primer“, ili upišite teme, svaku u novom redu:\n"
+                         "`Naziv teme ; broj časova obrade ; broj časova utvrđivanja`")
+    return Program(predmet=s.get("predmet", ""), razred=s.get("razred", 1),
+                   tip_skole=s.get("tip_skole", "osnovna"), smer=s.get("smer") or None,
+                   nedeljni_fond=0, izvor="ručni unos", teme=teme)
+
+
+def parsiraj_potvrdu_programa(t: str, s: "Stanje") -> bool:
+    """'da' | '3 ; 25' (tema 3 ima 25 časova) | '3 ; 20 ; 5' | 'redosled 2,1,3' | 'obriši 4'"""
+    if _da_ne(t) is True:
+        return True
+    p: Program = s["program"]
+    n = normalizuj(t)
+    izmenjeno = False
+    if m := re.search(r"redosled\D*([\d,\s]+)", n):
+        red = [int(x) for x in re.findall(r"\d+", m.group(1))]
+        po_rb = {tm.redni_broj: tm for tm in p.teme}
+        if sorted(red) != sorted(po_rb):
+            raise ValueError(f"Redosled mora sadržati sve teme: {sorted(po_rb)}.")
+        p.teme = [po_rb[i].model_copy(update={"redni_broj": k + 1}) for k, i in enumerate(red)]
+        izmenjeno = True
+    if m := re.search(r"obrisi\D*(\d+)", n):
+        p.teme = [tm for tm in p.teme if tm.redni_broj != int(m.group(1))]
+        for k, tm in enumerate(p.teme):
+            tm.redni_broj = k + 1
+        izmenjeno = True
+    for m in re.finditer(r"(?:^|\n)\s*(\d+)\s*[;=:]\s*(\d+)(?:\s*;\s*(\d+))?", t):
+        rb, o, u = int(m.group(1)), int(m.group(2)), m.group(3)
+        for tm in p.teme:
+            if tm.redni_broj == rb:
+                if u is None:  # samo ukupno: zadrži odnos obrada/utvrđivanje
+                    staro = tm.casova_ukupno or 1
+                    tm.casova_utvrdjivanje = round(o * tm.casova_utvrdjivanje / staro)
+                    tm.casova_ostalo = round(o * tm.casova_ostalo / staro)
+                    tm.casova_obrada = o - tm.casova_utvrdjivanje - tm.casova_ostalo
+                else:
+                    tm.casova_obrada, tm.casova_utvrdjivanje, tm.casova_ostalo = o, int(u), 0
+                tm.jedinice = []
+                izmenjeno = True
+    if not izmenjeno:
+        raise ValueError("Napišite „da“ ako je tačno, ili izmene: `3 ; 25` (tema 3 → 25 časova), "
+                         "`3 ; 20 ; 5` (obrada ; utvrđivanje), `redosled 2,1,3,...`, `obriši 4`.")
+    p.godisnji_fond = p.zbir_tema
+    return False  # izmenjeno → pitaj ponovo za potvrdu
+
+
+def parsiraj_kalendar(t: str, s: "Stanje") -> bool:
+    """'da' | 'početak 2026-09-01' | 'kraj 2027-06-04' | 'raspust 2027-04-26 2027-05-03' | 'neradni 2026-11-11'"""
+    if _da_ne(t) is True:
+        return True
+    k: SkolskiKalendar = s["kalendar"]
+    datumi = lambda x: [date.fromisoformat(d) for d in re.findall(r"\d{4}-\d{2}-\d{2}", x)]  # noqa: E731
+    izmenjeno = False
+    for red in re.split(r"[\n;]", t):
+        n = normalizuj(red)
+        d = datumi(red) or [_datum_dmy(x) for x in re.findall(r"\d{1,2}\.\d{1,2}\.\d{4}", red)]
+        if not d:
+            continue
+        if "pocet" in n:
+            k.pocetak = d[0]
+        elif "polugod" in n:
+            k.kraj_prvog_polugodista = d[0]
+        elif "kraj" in n:
+            k.kraj = d[0]
+        elif "raspust" in n and len(d) >= 2:
+            k.raspusti.append(Raspust(naziv="Raspust (nastavnik)", od=d[0], do=d[1]))
+        elif "neradn" in n or "slobod" in n:
+            from .modeli import NeradniDan
+            k.dodatni_neradni += [NeradniDan(datum=x, naziv="Neradni dan (nastavnik)") for x in d]
+        else:
+            continue
+        izmenjeno = True
+    if not izmenjeno:
+        raise ValueError("Napišite „da“ ili izmene, npr. `kraj 2027-06-04`, `raspust 2027-04-26 2027-05-03`, "
+                         "`neradni 2027-01-27`, `početak 2026-09-01`.")
+    s.pop("slotovi", None)
+    return False
+
+
+def _datum_dmy(x: str) -> date:
+    d, m, g = (int(v) for v in x.split("."))
+    return date(g, m, d)
+
+
+def parsiraj_strategiju(t: str, s: "Stanje") -> str:
+    n = normalizuj(t)
+    if "1" in n or "propor" in n:
+        return "proporcionalno"
+    if "2" in n or "rezerv" in n or "sistem" in n:
+        return "rezerva"
+    if "3" in n or "bez" in n:
+        return "bez_izmena"
+    raise ValueError("Odgovorite sa 1, 2 ili 3.")
+
+
+# ---------------------------------------------------------------- pitanja
+
+
+@dataclass
+class Pitanje:
+    kljuc: str
+    tekst: Callable[["Stanje"], str]
+    parser: Callable[[str, "Stanje"], Any]
+    uslov: Callable[["Stanje"], bool] = lambda s: True
+    format_za_llm: str = ""  # opis formata kada LLM treba da prevede slobodan odgovor
+    potvrda: bool = False  # parser vraća True kad je potvrđeno, False → pitaj opet
+
+
+def _tekst_programa(s: "Stanje") -> str:
+    p: Program = s["program"]
+    redovi = [f"{t.redni_broj}. {t.naziv} — {t.casova_ukupno} č. "
+              f"(obrada {t.casova_obrada}, utvrđivanje {t.casova_utvrdjivanje}, ostalo {t.casova_ostalo})"
+              for t in p.teme]
+    upozorenje = ""
+    if any(t.casova_ukupno == 0 for t in p.teme):
+        upozorenje = "\n⚠️ Neke teme nemaju broj časova — unesite ih (npr. `2 ; 18 ; 6`)."
+    return (f"Program: **{p.predmet}**, {p.razred}. razred{', smer ' + p.smer if p.smer else ''} "
+            f"({p.izvor or 'izvor nepoznat'})\n\n" + "\n".join(redovi) +
+            f"\n\n**Ukupno: {p.zbir_tema} časova.**{upozorenje}\n\n"
+            "Da li je ovo tačno? Napišite „da“, ili izmene: `3 ; 25`, `3 ; 20 ; 5`, `redosled 2,1,3,...`, `obriši 4`.")
+
+
+def _tekst_kalendara(s: "Stanje") -> str:
+    k: SkolskiKalendar = s["kalendar"]
+    slotovi = s.slotovi()
+    raspusti = "\n".join(f"- {r.naziv}: {r.od:%d.%m.%Y.} – {r.do:%d.%m.%Y.}" for r in k.raspusti)
+    dodatni = "\n".join(f"- {d.naziv}: {d.datum:%d.%m.%Y.}" for d in k.dodatni_neradni)
+    return (f"**{k.naziv}**\n\n- Početak: {k.pocetak:%d.%m.%Y.}\n- Kraj I polugodišta: "
+            f"{k.kraj_prvog_polugodista:%d.%m.%Y.}\n- Kraj nastave: {k.kraj:%d.%m.%Y.}\n{raspusti}\n{dodatni}\n"
+            f"- Državni praznici se automatski izuzimaju.\n\n"
+            f"Po ovom kalendaru i vašem rasporedu imate **{len(slotovi)} časova** u godini.\n\n"
+            "Da li je kalendar tačan? „da“ ili izmene: `kraj 2027-06-04`, `raspust 2027-04-26 2027-05-03`, "
+            "`neradni 2027-01-27`.")
+
+
+def _treba_uskladjivanje(s: "Stanje") -> bool:
+    return len(s.slotovi()) != s["program"].zbir_tema
+
+
+PITANJA: list[Pitanje] = [
+    Pitanje("tip_skole", lambda s: "Zdravo! Pravimo globalni i operativni plan. Da li je u pitanju "
+            "**osnovna** ili **srednja** škola?", parsiraj_tip, format_za_llm="'osnovna' ili 'srednja'"),
+    Pitanje("razred", lambda s: "Koji **razred**?", parsiraj_razred, format_za_llm="ceo broj razreda"),
+    Pitanje("predmet", lambda s: "Koji **predmet**?", parsiraj_tekst),
+    Pitanje("smer", lambda s: "Koji je **smer / obrazovni profil** (npr. opšti smer gimnazije, "
+            "elektrotehničar računara)?", parsiraj_tekst, uslov=lambda s: s.get("tip_skole") == "srednja"),
+    Pitanje("trajanje_srednje", lambda s: "Koliko godina traje taj smer (3 ili 4)?", parsiraj_ceo,
+            uslov=lambda s: s.get("tip_skole") == "srednja", format_za_llm="broj 3 ili 4"),
+    Pitanje("program", lambda s: "Pošaljite **PDF službenog glasnika** sa planom i programom (dugme ispod), "
+            "ili napišite **primer** za probu, ili upišite teme ručno, svaku u svom redu:\n"
+            "`Naziv teme ; časova obrade ; časova utvrđivanja`", parsiraj_program),
+    Pitanje("program_ok", _tekst_programa, parsiraj_potvrdu_programa, potvrda=True),
+    Pitanje("nedeljni_fond", lambda s: "Koliko časova **nedeljno** ima predmet?"
+            + (f" (po programu: {s['program'].nedeljni_fond:g} — napišite broj da potvrdite)"
+               if s.get("program") and s["program"].nedeljni_fond else ""),
+            parsiraj_broj, format_za_llm="broj časova nedeljno"),
+    Pitanje("raspored", lambda s: "Kojim **danima** držite ovaj čas u ovom odeljenju? "
+            "(npr. „ponedeljak i četvrtak“, ili „utorak 2, petak 1“ za blok čas)", parsiraj_raspored,
+            format_za_llm="dani skraćeno sa brojem časova, npr. 'pon 1, cet 2'"),
+    Pitanje("skolska_godina", lambda s: f"Za koju **školsku godinu**? (npr. {date.today().year if date.today().month >= 7 else date.today().year - 1}/"
+            f"{str((date.today().year if date.today().month >= 7 else date.today().year - 1) + 1)[2:]})",
+            parsiraj_godinu, format_za_llm="početna godina, npr. 2026"),
+    Pitanje("kalendar_ok", _tekst_kalendara, parsiraj_kalendar, potvrda=True),
+    Pitanje("strategija", lambda s: f"Po kalendaru imate **{len(s.slotovi())}** časova, a program predviđa "
+            f"**{s['program'].zbir_tema}**. Šta da uradim?\n\n1) **proporcionalno** prilagodim broj časova "
+            "svake teme\n2) **rezerva** — višak časova stavim kao sistematizaciju na kraj (ako manjka, "
+            "proporcionalno skratim)\n3) **bez izmena** — ostavim kako je u programu",
+            parsiraj_strategiju, uslov=_treba_uskladjivanje, format_za_llm="1, 2 ili 3"),
+    Pitanje("broj_provera", lambda s: "Koliko **pismenih / kontrolnih provera** planirate tokom godine? "
+            "(0 ako ih nema; raspodeliću ih ravnomerno po temama)", parsiraj_ceo,
+            format_za_llm="ceo broj"),
+    Pitanje("udzbenik", lambda s: "Koji **udžbenik** (izdavač/autor) koristite? (ili „-“ za preskakanje)",
+            parsiraj_opciono),
+    Pitanje("zelje", lambda s: "Imate li želje za **metode i oblike rada** ili korelaciju sa drugim "
+            "predmetima? (ili „-“)", parsiraj_opciono),
+]
+
+
+# ---------------------------------------------------------------- stanje i tok
+
+
+@dataclass
+class Stanje:
+    podaci: dict = field(default_factory=dict)
+
+    def get(self, k, d=None):
+        return self.podaci.get(k, d)
+
+    def __getitem__(self, k):
+        return self.podaci[k]
+
+    def __setitem__(self, k, v):
+        self.podaci[k] = v
+
+    def pop(self, k, d=None):
+        return self.podaci.pop(k, d)
+
+    def slotovi(self):
+        if "slotovi" not in self.podaci:
+            self.podaci["slotovi"] = slotovi_casova(self["kalendar"], self["raspored"])
+        return self.podaci["slotovi"]
+
+
+class Intervju:
+    def __init__(self, llm: LLM | None = None):
+        self.llm = llm
+        self.s = Stanje()
+        self.zavrseno: set[str] = set()
+
+    # --- tok
+    def trenutno(self) -> Pitanje | None:
+        for p in PITANJA:
+            if p.kljuc not in self.zavrseno and p.uslov(self.s):
+                return p
+        return None
+
+    def pitanje(self) -> str | None:
+        p = self.trenutno()
+        if p is None:
+            return None
+        return p.tekst(self.s)
+
+    def odgovori(self, tekst: str) -> str | None:
+        """Obradi odgovor. Vraća poruku o grešci (pa se isto pitanje ponavlja) ili None."""
+        p = self.trenutno()
+        if p is None:
+            return None
+        try:
+            vrednost = self._parsiraj(p, tekst)
+        except ValueError as e:
+            return str(e)
+        if p.potvrda:
+            if vrednost:
+                self.zavrseno.add(p.kljuc)
+            return None
+        self.s[p.kljuc] = vrednost
+        self.zavrseno.add(p.kljuc)
+        self._posle(p.kljuc)
+        return None
+
+    def postavi_program(self, program: Program) -> None:
+        """Koristi aplikacija kada je program izvučen iz PDF-a."""
+        self.s["program"] = program
+        self.zavrseno.add("program")
+        self._posle("program")
+
+    # --- interno
+    def _parsiraj(self, p: Pitanje, tekst: str):
+        try:
+            return p.parser(tekst, self.s)
+        except ValueError:
+            if not (self.llm and p.format_za_llm):
+                raise
+            try:
+                odg = self.llm.chat_json(
+                    "Prevedi odgovor nastavnika u traženi format. Vrati JSON {\"vrednost\": \"...\"}. "
+                    "Ako odgovor nema traženu informaciju, vrati {\"vrednost\": null}.",
+                    f"Pitanje: {p.tekst(self.s)}\nTraženi format: {p.format_za_llm}\nOdgovor: {tekst}",
+                    max_tokena=100)
+            except LLMGreska:
+                raise ValueError("Nisam razumeo odgovor, pokušajte ponovo.") from None
+            if odg.get("vrednost") in (None, ""):
+                raise
+            return p.parser(str(odg["vrednost"]), self.s)
+
+    def _posle(self, kljuc: str) -> None:
+        if kljuc == "program":
+            p: Program = self.s["program"]
+            p.tip_skole = self.s.get("tip_skole", p.tip_skole)
+            p.razred = self.s.get("razred", p.razred)
+            p.predmet = p.predmet or self.s.get("predmet", "")
+            p.smer = p.smer or self.s.get("smer")
+        if kljuc == "nedeljni_fond":
+            self.s["program"].nedeljni_fond = self.s["nedeljni_fond"]
+        if kljuc == "raspored":
+            self.s.pop("slotovi")
+        if kljuc == "skolska_godina":
+            self._napravi_kalendar()
+
+    def _napravi_kalendar(self) -> None:
+        self.s["kalendar"] = kalendar_za(self.s["skolska_godina"], self.s["tip_skole"], self.s["razred"],
+                                         trajanje_srednje=self.s.get("trajanje_srednje", 4) or 4)
+        self.s.pop("slotovi")
+
+    def napravi(self):
+        """Posle intervjua: (teme, časovi, broj časova koji nisu stali)."""
+        return napravi_plan(self.s["program"], self.s.slotovi(),
+                            strategija=self.s.get("strategija", "bez_izmena"),
+                            broj_provera=self.s.get("broj_provera", 0))

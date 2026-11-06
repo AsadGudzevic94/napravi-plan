@@ -1,0 +1,28 @@
+{
+  "predmet": "Matematika",
+  "razred": 5,
+  "tip_skole": "osnovna",
+  "smer": null,
+  "nedeljni_fond": 4,
+  "godisnji_fond": 144,
+  "izvor": "PRIMER za probu — ilustrativni podaci, NIJE prepisano iz glasnika",
+  "teme": [
+    {"redni_broj": 1, "naziv": "Prirodni brojevi i deljivost", "casova_obrada": 14, "casova_utvrdjivanje": 12, "casova_ostalo": 0,
+     "ishodi": ["primeni pravila deljivosti sa 2, 3, 4, 5, 9 i dekadnim jedinicama", "odredi NZS i NZD"],
+     "sadrzaji": ["deljivost", "prosti i složeni brojevi", "NZS i NZD"]},
+    {"redni_broj": 2, "naziv": "Osnovni geometrijski pojmovi", "casova_obrada": 8, "casova_utvrdjivanje": 8, "casova_ostalo": 0,
+     "ishodi": ["koristi pojmove tačka, prava, duž, poluprava i ravan", "konstruiše kružnicu"],
+     "sadrzaji": ["tačka, prava, ravan", "duž i poluprava", "krug i kružnica"]},
+    {"redni_broj": 3, "naziv": "Ugao", "casova_obrada": 10, "casova_utvrdjivanje": 10, "casova_ostalo": 0,
+     "ishodi": ["meri i crta ugao", "klasifikuje uglove", "primeni odnose uglova"],
+     "sadrzaji": ["pojam ugla", "merenje uglova", "vrste uglova", "uglovi uz transverzalu"]},
+    {"redni_broj": 4, "naziv": "Razlomci", "casova_obrada": 30, "casova_utvrdjivanje": 30, "casova_ostalo": 0,
+     "ishodi": ["sabira, oduzima, množi i deli razlomke", "rešava jednačine i nejednačine sa razlomcima"],
+     "sadrzaji": ["pojam razlomka", "decimalni zapis", "računske operacije", "jednačine i nejednačine", "aritmetička sredina", "procenti"]},
+    {"redni_broj": 5, "naziv": "Osna simetrija", "casova_obrada": 9, "casova_utvrdjivanje": 9, "casova_ostalo": 0,
+     "ishodi": ["uoči osno simetrične figure", "konstruiše simetralu duži i ugla"],
+     "sadrzaji": ["osna simetrija u ravni", "simetrala duži", "simetrala ugla"]},
+    {"redni_broj": 6, "naziv": "Sistematizacija", "casova_obrada": 0, "casova_utvrdjivanje": 4, "casova_ostalo": 0,
+     "ishodi": [], "sadrzaji": []}
+  ]
+}
