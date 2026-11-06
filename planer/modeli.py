@@ -25,7 +25,7 @@ class Tema(BaseModel):
     casova_obrada: int = 0
     casova_utvrdjivanje: int = 0
     casova_ostalo: int = 0  # provere, sistematizacija...
-    jedinice: list["NastavnaJedinica"] = Field(default_factory=list)
+    jedinice: list[NastavnaJedinica] = Field(default_factory=list)
     kompetencije: list[str] = Field(default_factory=list)  # međupredmetne kompetencije
     korelacija: list[str] = Field(default_factory=list)  # predmeti za povezivanje
     obrazlozenje: list[str] = Field(default_factory=list)  # zašto su izabrane (izvor: glasnik / logika)
@@ -60,7 +60,7 @@ class Program(BaseModel):
     fond_glasnika: int | None = None  # ukupno časova kako piše u glasniku (pre izmena nastavnika)
 
     @model_validator(mode="after")
-    def _popuni_godisnji(self) -> "Program":
+    def _popuni_godisnji(self) -> Program:
         if self.godisnji_fond is None:
             self.godisnji_fond = (sum(t.casova_ukupno for t in self.teme) + self.posebnih_casova) or None
         return self

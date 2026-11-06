@@ -43,7 +43,9 @@ PROVIDERI = {
 def _ucitaj_env(putanja: str = ".env") -> None:
     if not os.path.exists(putanja):
         return
-    for red in open(putanja, encoding="utf-8"):
+    with open(putanja, encoding="utf-8") as f:
+        redovi = f.read().splitlines()
+    for red in redovi:
         red = red.strip()
         if red and not red.startswith("#") and "=" in red:
             k, v = red.split("=", 1)
@@ -63,7 +65,7 @@ class LLM:
     timeout: int = 120
 
     @classmethod
-    def iz_okruzenja(cls) -> "LLM | None":
+    def iz_okruzenja(cls) -> LLM | None:
         """Vrati klijent ili None ako LLM nije podešen (aplikacija tada radi bez LLM-a)."""
         _ucitaj_env()
         provider = os.environ.get("LLM_PROVIDER", "").lower().strip()
@@ -157,4 +159,4 @@ def izvuci_json(tekst: str) -> dict:
         m = re.search(r"\{.*\}", tekst, re.S)
         if m:
             return json.loads(m.group(0))
-        raise LLMGreska(f"LLM nije vratio JSON: {tekst[:300]}")
+        raise LLMGreska(f"LLM nije vratio JSON: {tekst[:300]}") from None

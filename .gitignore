@@ -1,16 +1,22 @@
-.env
+# Python
 __pycache__/
 *.pyc
-.pytest_cache/
 .venv/
+.pytest_cache/
+.ruff_cache/
+
+# Tajne (API ključevi)
+.env
+.streamlit/secrets.toml
+
+# Izlazni dokumenti i rezervne kopije
+izlaz/
 *.docx
 *.xlsx
 *.zip
 *.bundle
-izlaz/
-.streamlit/secrets.toml
 
-# lokalno za Claude Code (ne ide na GitHub)
+# Lokalno za Claude Code (ne ide na GitHub)
 CLAUDE.md
 CLAUDE.local.md
 .claude/

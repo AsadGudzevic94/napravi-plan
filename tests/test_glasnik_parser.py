@@ -4,10 +4,10 @@ import io
 import docx
 
 from planer.glasnik_parser import blokovi_iz_docx, izaberi, naslov_izvora, parsiraj_blokove, u_program
-from planer.pismo import u_cirilicu, u_latinicu
-from planer.raspodela import napravi_plan
 from planer.kalendar import slotovi_casova
+from planer.pismo import u_cirilicu, u_latinicu
 from planer.podrazumevani_kalendar import kalendar_za
+from planer.raspodela import napravi_plan
 
 
 def _mini_glasnik() -> bytes:

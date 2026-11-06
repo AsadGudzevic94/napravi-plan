@@ -9,15 +9,15 @@ from docx.shared import Cm, Pt
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font
 
-from .modeli import MESECI, Cas, Program
 from .formule import formatiraj
+from .modeli import MESECI, Cas, Program
 from .pismo import preslovi as _preslovi
+from .raspodela import meseci_u_godini
 
 
 def preslovi(t: str, pismo: str) -> str:
     """Pismo koje je nastavnik izabrao + ispravno zapisane formule (x², log₂, √, ≤)."""
     return _preslovi(formatiraj(t), pismo)
-from .raspodela import meseci_u_godini
 
 
 def _zaglavlje(p: Program, naslov: str, nastavnik: str = "", skola: str = "") -> list[str]:
@@ -33,31 +33,6 @@ def _landscape(doc: Document) -> None:
     s.page_width, s.page_height = Cm(29.7), Cm(21.0)  # A4 položeno
     for m in ("left_margin", "right_margin", "top_margin", "bottom_margin"):
         setattr(s, m, Cm(1.5))
-
-
-def _tabela(doc: Document, zaglavlje: list[str], redovi: list[list], pismo: str = "latinica",
-            sirine_cm: list[float] | None = None) -> None:
-    t = doc.add_table(rows=1, cols=len(zaglavlje))
-    t.style = "Table Grid"
-    t.autofit = False
-    for i, h in enumerate(zaglavlje):
-        c = t.rows[0].cells[i]
-        c.text = preslovi(str(h), pismo)
-        for r in c.paragraphs[0].runs:
-            r.bold = True
-            r.font.size = Pt(9)
-    for red in redovi:
-        cells = t.add_row().cells
-        for i, v in enumerate(red):
-            cells[i].text = "" if v is None else preslovi(str(v), pismo)
-            for r in cells[i].paragraphs[0].runs:
-                r.font.size = Pt(9)
-    if sirine_cm:
-        for kol, w in zip(t.columns, sirine_cm):
-            kol.width = Cm(w)
-        for red in t.rows:
-            for c, w in zip(red.cells, sirine_cm):
-                c.width = Cm(w)
 
 
 # ---------------------------------------------------------------- ZUOV obrasci

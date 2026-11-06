@@ -6,15 +6,16 @@ from __future__ import annotations
 import json
 import re
 from collections import Counter
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from .ekstrakcija import normalizuj
 from .kalendar import slotovi_casova
 from .llm import LLM, LLMGreska
-from .modeli import DANI, Program, Raspust, SkolskiKalendar, Tema
+from .modeli import DANI, NeradniDan, Program, Raspust, SkolskiKalendar, Tema
 from .podrazumevani_kalendar import kalendar_za
 from .raspodela import napravi_plan
 
@@ -32,7 +33,7 @@ def _da_ne(t: str) -> bool | None:
     return None
 
 
-def parsiraj_tip(t: str, s: "Stanje") -> str:
+def parsiraj_tip(t: str, s: Stanje) -> str:
     n = normalizuj(t)
     if "osnov" in n or n.strip() == "o":
         return "osnovna"
@@ -41,7 +42,7 @@ def parsiraj_tip(t: str, s: "Stanje") -> str:
     raise ValueError("Napišite „osnovna“ ili „srednja“.")
 
 
-def parsiraj_razred(t: str, s: "Stanje") -> int:
+def parsiraj_razred(t: str, s: Stanje) -> int:
     n = normalizuj(t)
     rimski = {"viii": 8, "vii": 7, "vi": 6, "iv": 4, "v": 5, "iii": 3, "ii": 2, "i": 1}
     m = re.search(r"\d+", n)
@@ -52,26 +53,26 @@ def parsiraj_razred(t: str, s: "Stanje") -> int:
     return r
 
 
-def parsiraj_tekst(t: str, s: "Stanje") -> str:
+def parsiraj_tekst(t: str, s: Stanje) -> str:
     t = t.strip()
     if len(t) < 2:
         raise ValueError("Odgovor je prekratak.")
     return t
 
 
-def parsiraj_opciono(t: str, s: "Stanje") -> str:
+def parsiraj_opciono(t: str, s: Stanje) -> str:
     t = t.strip()
     return "" if normalizuj(t) in {"", "-", "ne", "nema", "preskoci", "nista"} else t
 
 
-def parsiraj_broj(t: str, s: "Stanje") -> float:
+def parsiraj_broj(t: str, s: Stanje) -> float:
     m = re.search(r"\d+(?:[.,]\d+)?", t)
     if not m:
         raise ValueError("Upišite broj.")
     return float(m.group().replace(",", "."))
 
 
-def parsiraj_ceo(t: str, s: "Stanje") -> int:
+def parsiraj_ceo(t: str, s: Stanje) -> int:
     if normalizuj(t).strip() in {"nijedna", "nijednu", "ne", "nema"}:
         return 0
     return int(parsiraj_broj(t, s))
@@ -80,7 +81,7 @@ def parsiraj_ceo(t: str, s: "Stanje") -> int:
 _DANI_NORM = {normalizuj(d)[:3]: i for i, d in enumerate(DANI[:5])}
 
 
-def parsiraj_raspored(t: str, s: "Stanje") -> dict[int, int]:
+def parsiraj_raspored(t: str, s: Stanje) -> dict[int, int]:
     """'pon, čet' | 'ponedeljak 2, sreda 1' | 'pon uto sre čet' → {dan: broj_časova}"""
     n = normalizuj(t)
     raspored: dict[int, int] = {}
@@ -96,7 +97,7 @@ def parsiraj_raspored(t: str, s: "Stanje") -> dict[int, int]:
     return raspored
 
 
-def parsiraj_godinu(t: str, s: "Stanje") -> int:
+def parsiraj_godinu(t: str, s: Stanje) -> int:
     m = re.search(r"(20\d\d)", t)
     if not m:
         raise ValueError("Napišite školsku godinu, npr. 2026/27.")
@@ -120,7 +121,7 @@ def ucitaj_primer() -> Program:
     return Program.model_validate(json.loads((DATA / "program_primer_matematika_5.json").read_text(encoding="utf-8")))
 
 
-def parsiraj_program(t: str, s: "Stanje") -> Program:
+def parsiraj_program(t: str, s: Stanje) -> Program:
     if normalizuj(t).strip() in {"primer", "demo"}:
         return ucitaj_primer()
     teme = parsiraj_teme_tekst(t)
@@ -132,7 +133,7 @@ def parsiraj_program(t: str, s: "Stanje") -> Program:
                    nedeljni_fond=0, izvor="ručni unos", teme=teme)
 
 
-def parsiraj_potvrdu_programa(t: str, s: "Stanje") -> bool:
+def parsiraj_potvrdu_programa(t: str, s: Stanje) -> bool:
     """'da' | '3 ; 25' (tema 3 ima 25 časova) | '3 ; 20 ; 5' | 'redosled 2,1,3' | 'obriši 4'"""
     if _da_ne(t) is True:
         return True
@@ -171,7 +172,7 @@ def parsiraj_potvrdu_programa(t: str, s: "Stanje") -> bool:
     return False  # izmenjeno → pitaj ponovo za potvrdu
 
 
-def parsiraj_kalendar(t: str, s: "Stanje") -> bool:
+def parsiraj_kalendar(t: str, s: Stanje) -> bool:
     """'da' | 'početak 2026-09-01' | 'kraj 2027-06-04' | 'raspust 2027-04-26 2027-05-03' | 'neradni 2026-11-11'"""
     if _da_ne(t) is True:
         return True
@@ -192,7 +193,6 @@ def parsiraj_kalendar(t: str, s: "Stanje") -> bool:
         elif "raspust" in n and len(d) >= 2:
             k.raspusti.append(Raspust(naziv="Raspust (nastavnik)", od=d[0], do=d[1]))
         elif "neradn" in n or "slobod" in n:
-            from .modeli import NeradniDan
             k.dodatni_neradni += [NeradniDan(datum=x, naziv="Neradni dan (nastavnik)") for x in d]
         else:
             continue
@@ -209,7 +209,7 @@ def _datum_dmy(x: str) -> date:
     return date(g, m, d)
 
 
-def parsiraj_strategiju(t: str, s: "Stanje") -> str:
+def parsiraj_strategiju(t: str, s: Stanje) -> str:
     n = normalizuj(t)
     if "1" in n or "propor" in n or "skrat" in n:
         return "proporcionalno"
@@ -224,14 +224,14 @@ def parsiraj_strategiju(t: str, s: "Stanje") -> str:
 @dataclass
 class Pitanje:
     kljuc: str
-    tekst: Callable[["Stanje"], str]
-    parser: Callable[[str, "Stanje"], Any]
-    uslov: Callable[["Stanje"], bool] = lambda s: True
+    tekst: Callable[[Stanje], str]
+    parser: Callable[[str, Stanje], Any]
+    uslov: Callable[[Stanje], bool] = lambda s: True
     format_za_llm: str = ""  # opis formata kada LLM treba da prevede slobodan odgovor
     potvrda: bool = False  # parser vraća True kad je potvrđeno, False → pitaj opet
 
 
-def _tekst_programa(s: "Stanje") -> str:
+def _tekst_programa(s: Stanje) -> str:
     p: Program = s["program"]
     redovi = [f"{t.redni_broj}. {t.naziv} — {t.casova_ukupno} č. "
               f"(obrada {t.casova_obrada}, utvrđivanje {t.casova_utvrdjivanje}, ostalo {t.casova_ostalo})"
@@ -246,7 +246,7 @@ def _tekst_programa(s: "Stanje") -> str:
             "Da li je ovo tačno? Napišite „da“, ili izmene: `3 ; 25`, `3 ; 20 ; 5`, `redosled 2,1,3,...`, `obriši 4`.")
 
 
-def _tekst_kalendara(s: "Stanje") -> str:
+def _tekst_kalendara(s: Stanje) -> str:
     k: SkolskiKalendar = s["kalendar"]
     slotovi = s.slotovi()
     raspusti = "\n".join(f"- {r.naziv}: {r.od:%d.%m.%Y.} – {r.do:%d.%m.%Y.}" for r in k.raspusti)
@@ -260,7 +260,7 @@ def _tekst_kalendara(s: "Stanje") -> str:
             "`neradni 2027-01-27`.")
 
 
-def _poruka_fonda(s: "Stanje") -> str:
+def _poruka_fonda(s: Stanje) -> str:
     p = s.get("program")
     if not p:
         return ""
@@ -273,23 +273,28 @@ def _poruka_fonda(s: "Stanje") -> str:
     return f" To je tačno koliko propisuje glasnik ({g})."
 
 
-def _treba_uskladjivanje(s: "Stanje") -> bool:
+def _tekuca_skolska() -> str:
+    g = date.today().year if date.today().month >= 7 else date.today().year - 1
+    return f"{g}/{str(g + 1)[2:]}"
+
+
+def _treba_uskladjivanje(s: Stanje) -> bool:
     """Pitamo samo kad časova u kalendaru ima MANJE nego u glasniku; višak se ne planira."""
     return len(s.slotovi()) < s["program"].ukupno_casova
 
 
-def _samo_ukupno(s: "Stanje") -> bool:
+def _samo_ukupno(s: Stanje) -> bool:
     p = s.get("program")
     return bool(p) and all(t.casova_utvrdjivanje == 0 and t.casova_ostalo == 0 for t in p.teme) and \
         any(t.casova_obrada > 2 for t in p.teme)
 
 
-def _tekst_varijanti(s: "Stanje") -> str:
+def _tekst_varijanti(s: Stanje) -> str:
     redovi = "\n".join(f"{i + 1}) {v.naziv()}" for i, v in enumerate(s["kandidati"]))
     return f"U glasniku ima više programa koji odgovaraju. Koji je vaš? Napišite broj.\n\n{redovi}"
 
 
-def parsiraj_varijantu(t: str, s: "Stanje"):
+def parsiraj_varijantu(t: str, s: Stanje):
     k = s["kandidati"]
     m = re.search(r"\d+", t)
     if not m or not 1 <= int(m.group()) <= len(k):
@@ -297,20 +302,21 @@ def parsiraj_varijantu(t: str, s: "Stanje"):
     return k[int(m.group()) - 1]
 
 
-def _tekst_pismenih(s: "Stanje") -> str:
+def _tekst_pismenih(s: Stanje) -> str:
     p: Program = s["program"]
     delovi = []
     if p.inicijalni_casova:
         delovi.append(f"- inicijalni test i analiza: **{p.inicijalni_casova}** časa, na početku godine")
     if p.pismeni_broj:
+        ukupno = p.pismeni_broj * (p.pismeni_trajanje + p.pismeni_ispravka)
         delovi.append(f"- **{p.pismeni_broj}** pismena zadatka po **{p.pismeni_trajanje}** časa"
                       + (" + ispravka (1 čas)" if p.pismeni_ispravka else "")
-                      + f" = **{p.pismeni_broj * (p.pismeni_trajanje + p.pismeni_ispravka)}** časova, ravnomerno kroz godinu")
+                      + f" = **{ukupno}** časova, ravnomerno kroz godinu")
     return ("Glasnik predviđa i časove van tema:\n" + "\n".join(delovi) +
             "\n\nDa li je tako? „da“, ili izmene: `pismeni 2`, `trajanje 1`, `inicijalni 0`, `bez ispravke`.")
 
 
-def parsiraj_pismene(t: str, s: "Stanje") -> bool:
+def parsiraj_pismene(t: str, s: Stanje) -> bool:
     if _da_ne(t) is True:
         return True
     p: Program = s["program"]
@@ -329,7 +335,7 @@ def parsiraj_pismene(t: str, s: "Stanje") -> bool:
     return False
 
 
-def parsiraj_procenat(t: str, s: "Stanje") -> float:
+def parsiraj_procenat(t: str, s: Stanje) -> float:
     v = parsiraj_broj(t, s)
     v = v * 100 if v <= 1 else v
     if not 10 <= v <= 90:
@@ -337,13 +343,13 @@ def parsiraj_procenat(t: str, s: "Stanje") -> float:
     return v / 100
 
 
-def parsiraj_listu(t: str, s: "Stanje") -> list[str]:
+def parsiraj_listu(t: str, s: Stanje) -> list[str]:
     if normalizuj(t).strip(" .") in {"", "-", "ne", "nema", "ne znam", "preskoci"}:
         return []
     return [x.strip(" .") for x in re.split(r"[,;\n]", t) if x.strip(" .")]
 
 
-def _analiziraj(s: "Stanje") -> None:
+def _analiziraj(s: Stanje) -> None:
     from .kompetencije import analiziraj_program
     if not s.get("analizirano"):
         s["program"] = analiziraj_program(s["program"], s.get("predmeti_odeljenja") or None,
@@ -351,7 +357,7 @@ def _analiziraj(s: "Stanje") -> None:
         s["analizirano"] = True
 
 
-def _tekst_kompetencija(s: "Stanje") -> str:
+def _tekst_kompetencija(s: Stanje) -> str:
     _analiziraj(s)
     p: Program = s["program"]
     delovi = []
@@ -365,7 +371,7 @@ def _tekst_kompetencija(s: "Stanje") -> str:
             "`dodaj 3: Fizika`, `mk 2: komunikacija, saradnja`, `bez 3: Hemija`.")
 
 
-def parsiraj_kompetencije(t: str, s: "Stanje") -> bool:
+def parsiraj_kompetencije(t: str, s: Stanje) -> bool:
     if _da_ne(t) is True:
         return True
     p: Program = s["program"]
@@ -395,7 +401,7 @@ def parsiraj_kompetencije(t: str, s: "Stanje") -> bool:
     return False
 
 
-def parsiraj_pismo(t: str, s: "Stanje") -> str:
+def parsiraj_pismo(t: str, s: Stanje) -> str:
     n = normalizuj(t)
     if n.startswith("c") or "cir" in n:
         return "ćirilica"
@@ -433,8 +439,7 @@ PITANJA: list[Pitanje] = [
             + (" — pismeni zadaci traju 2 časa, pa je važno da navedete blok čas ako ga imate."
                if s.get("program") and s["program"].pismeni_trajanje > 1 else ""), parsiraj_raspored,
             format_za_llm="dani skraćeno sa brojem časova, npr. 'pon 1, cet 2'"),
-    Pitanje("skolska_godina", lambda s: f"Za koju **školsku godinu**? (npr. {date.today().year if date.today().month >= 7 else date.today().year - 1}/"
-            f"{str((date.today().year if date.today().month >= 7 else date.today().year - 1) + 1)[2:]})",
+    Pitanje("skolska_godina", lambda s: f"Za koju **školsku godinu**? (npr. {_tekuca_skolska()})",
             parsiraj_godinu, format_za_llm="početna godina, npr. 2026"),
     Pitanje("kalendar_ok", _tekst_kalendara, parsiraj_kalendar, potvrda=True),
     Pitanje("strategija", lambda s: f"Po kalendaru imate samo **{len(s.slotovi())}** časova, a glasnik propisuje "

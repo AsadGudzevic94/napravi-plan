@@ -63,7 +63,8 @@ def tabela(kolone: list[str], redovi: list[list], klase: list[str], zbir_posledn
         celije = []
         for v, kl in zip(red, klase):
             prazno = kl == "br" and v in ("", None, 0)
-            celije.append(f'<td class="{kl}{" prazno" if prazno else ""}">{"·" if prazno else html.escape(str(v))}</td>')
+            sadrzaj = "·" if prazno else html.escape(str(v))
+            celije.append(f'<td class="{kl}{" prazno" if prazno else ""}">{sadrzaj}</td>')
         zbir = ' class="zbir"' if zbir_poslednji and i == len(redovi) - 1 else ""
         telo.append(f"<tr{zbir}>{''.join(celije)}</tr>")
     st.markdown(f'<div class="np-tabela-omot"><table class="np-tabela"><thead><tr>{glava}</tr></thead>'

@@ -95,14 +95,6 @@ def slotovi_casova(k: SkolskiKalendar, raspored: dict[int, int]) -> list[date]:
     return slotovi
 
 
-def broj_nastavnih_nedelja(k: SkolskiKalendar) -> float:
-    """Broj nastavnih nedelja = min broj pojavljivanja nekog radnog dana (kao u pravilnicima)."""
-    brojac = [0] * 5
-    for _, dan in nastavni_dani(k):
-        brojac[dan] += 1
-    return min(brojac)
-
-
 def brojac_dana(k: SkolskiKalendar) -> dict[int, int]:
     brojac = {i: 0 for i in range(5)}
     for _, dan in nastavni_dani(k):

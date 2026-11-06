@@ -187,15 +187,3 @@ def analiziraj_program(program: Program, dostupni_predmeti: list[str] | None = N
     p = program.model_copy(deep=True)
     p.teme = [analiziraj_temu(t, p, dostupni_predmeti, strucni_predmeti) for t in p.teme]
     return p
-
-
-def predmeti_razreda(varijante: list, razred: int) -> list[str]:
-    """Predmeti koji u ovom glasniku postoje za dati razred (samo kao pomoć — spisak nije potpun,
-    jer se neki predmeti nalaze u drugim pravilnicima; filtrira se samo po spisku nastavnika)."""
-    imena = []
-    for v in varijante:
-        if v.razred == razred:
-            ime = v.predmet[:1] + v.predmet[1:].lower()
-            if ime not in imena:
-                imena.append(ime)
-    return imena

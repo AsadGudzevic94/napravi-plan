@@ -10,7 +10,7 @@ from datetime import date
 
 from .kalendar import neradni_dani
 from .modeli import Cas, Program, SkolskiKalendar
-from .raspodela import RB_INICIJALNI, RB_PISMENI
+from .raspodela import RB_PISMENI
 
 
 def proveri_plan(program: Program, casovi: list[Cas], kalendar: SkolskiKalendar,
@@ -61,7 +61,8 @@ def proveri_plan(program: Program, casovi: list[Cas], kalendar: SkolskiKalendar,
     if program.pismeni_broj:
         dodaj(len(pismeni) == program.pismeni_broj * program.pismeni_trajanje,
               f"Planirano {program.pismeni_broj} pismena zadatka.",
-              f"Planirano {len(pismeni) // max(1, program.pismeni_trajanje)} pismenih, glasnik: {program.pismeni_broj}.")
+              f"Planirano {len(pismeni) // max(1, program.pismeni_trajanje)} pismenih, "
+              f"glasnik: {program.pismeni_broj}.")
         if program.pismeni_trajanje > 1:
             po_pz: dict[str, list[date]] = {}
             for c in pismeni:
@@ -98,7 +99,6 @@ def proveri_plan(program: Program, casovi: list[Cas], kalendar: SkolskiKalendar,
     po_mesecu = Counter((c.datum.year, c.datum.month) for c in casovi)
     prazni = [f"{m:02d}." for (g, m) in _meseci(kalendar) if not po_mesecu.get((g, m))]
     dodaj(not prazni, "Svaki nastavni mesec ima časove.", "Meseci bez časova: " + ", ".join(prazni), "upozorenje")
-    _ = RB_INICIJALNI
     return rez
 
 

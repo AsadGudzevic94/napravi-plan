@@ -17,9 +17,21 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from .intervju import (PITANJA, Intervju, parsiraj_broj, parsiraj_ceo, parsiraj_godinu, parsiraj_listu,
-                       parsiraj_opciono, parsiraj_pismo, parsiraj_procenat, parsiraj_raspored, parsiraj_razred,
-                       parsiraj_tekst, parsiraj_tip)
+from .intervju import (
+    PITANJA,
+    Intervju,
+    parsiraj_broj,
+    parsiraj_ceo,
+    parsiraj_godinu,
+    parsiraj_listu,
+    parsiraj_opciono,
+    parsiraj_pismo,
+    parsiraj_procenat,
+    parsiraj_raspored,
+    parsiraj_razred,
+    parsiraj_tekst,
+    parsiraj_tip,
+)
 from .llm import LLM, LLMGreska
 
 # polja koja LLM sme da popuni iz slobodne poruke → (opis za LLM, parser koji proverava vrednost)
@@ -154,11 +166,8 @@ class Agent:
         izmene = [str(k) for k in komande if str(k).strip().lower() != "da"]
         if izmene:
             greska = self.iv.odgovori("\n".join(izmene))
-            if greska:
-                return [f"⚠️ {greska}"]
-            if any(str(k).strip().lower() == "da" for k in komande):
-                return []  # izmenjeno → pitanje se ponavlja sa novim stanjem, pa nastavnik potvrđuje
-            return []
+            # posle izmene pitanje se ponavlja sa novim stanjem, pa nastavnik ponovo potvrđuje
+            return [f"⚠️ {greska}"] if greska else []
         greska = self.iv.odgovori("da")
         return [f"⚠️ {greska}"] if greska else []
 

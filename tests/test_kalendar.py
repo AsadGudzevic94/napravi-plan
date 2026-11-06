@@ -1,7 +1,6 @@
 from datetime import date
 
-from planer.kalendar import (brojac_dana, drzavni_praznici_srbija, neradni_dani, pravoslavni_uskrs,
-                             slotovi_casova)
+from planer.kalendar import brojac_dana, drzavni_praznici_srbija, neradni_dani, pravoslavni_uskrs, slotovi_casova
 from planer.modeli import Raspust, SkolskiKalendar, Zamena
 from planer.podrazumevani_kalendar import kalendar_za
 

@@ -1,0 +1,6 @@
+# Isti završeci redova na Windowsu i Linuxu (Streamlit Cloud)
+* text=auto eol=lf
+*.png binary
+*.docx binary
+*.xlsx binary
+*.pdf binary

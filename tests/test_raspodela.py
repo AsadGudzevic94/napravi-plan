@@ -3,8 +3,14 @@ from datetime import date, timedelta
 import pytest
 
 from planer.intervju import ucitaj_primer
-from planer.raspodela import (globalni_plan, napravi_plan, operativni_plan, postavi_provere,
-                              sekvenca_jedinica, uskladi_fond)
+from planer.raspodela import (
+    globalni_plan,
+    napravi_plan,
+    operativni_plan,
+    postavi_provere,
+    sekvenca_jedinica,
+    uskladi_fond,
+)
 
 
 def slotovi(n):
