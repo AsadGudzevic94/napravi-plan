@@ -343,6 +343,38 @@ def parsiraj_procenat(t: str, s: Stanje) -> float:
     return v / 100
 
 
+RECI_PRETRAGE = {"pronadji", "nadji", "trazi", "potrazi", "pretrazi", "pronadji glasnik", "nadji glasnik",
+                 "potrazi glasnik", "pronadji sam", "trazi sam"}
+
+
+def _tekst_predloga_glasnika(s: Stanje) -> str:
+    redovi = []
+    for i, pr in enumerate(s["predlozi_glasnika"], 1):
+        p = pr.pravilnik
+        oznake = ", ".join(r.oznaka for r in p.reference[-6:])
+        dodatak = f" · {pr.razlog}" if pr.razlog else ""
+        link = f" · [PIS]({p.pis_url})" if p.pis_url else ""
+        preporuka = " *(preporuka)*" if i == 1 else ""
+        redovi.append(f"{i}) **{p.naziv}**{preporuka}  \n   glasnici: {oznake}{dodatak}{link}")
+    return (f"Pronašao sam u zvaničnom katalogu ({s.get('opis_kataloga', 'ZUOV')}) pravilnike koji odgovaraju. "
+            "Koji da koristim? Napišite **broj** — preuzeću glasnik i proveriti da zaista sadrži program za vaš "
+            "predmet, razred i fond časova.\n\n" + "\n".join(redovi) +
+            "\n\nIli pošaljite svoj fajl dugmetom ispod, ili napišite „ne“.")
+
+
+def parsiraj_izbor_glasnika(t: str, s: Stanje) -> int:
+    n = normalizuj(t).strip(" .")
+    if n in {"ne", "necu", "poslacu", "poslacu sam", "rucno"}:
+        return 0
+    m = re.search(r"\d+", n)
+    k = len(s["predlozi_glasnika"])
+    if n in {"da", "prvi", "preporuka", "ok"}:
+        return 1
+    if not m or not 1 <= int(m.group()) <= k:
+        raise ValueError(f"Napišite broj od 1 do {k}, ili „ne“ ako ćete poslati svoj fajl.")
+    return int(m.group())
+
+
 def parsiraj_listu(t: str, s: Stanje) -> list[str]:
     if normalizuj(t).strip(" .") in {"", "-", "ne", "nema", "ne znam", "preskoci"}:
         return []
@@ -421,10 +453,14 @@ PITANJA: list[Pitanje] = [
             uslov=lambda s: s.get("tip_skole") == "srednja", format_za_llm="broj 3 ili 4"),
     Pitanje("nedeljni_fond", lambda s: "Koliko časova **nedeljno** ima predmet u ovom odeljenju?",
             parsiraj_broj, format_za_llm="broj časova nedeljno"),
+    Pitanje("izbor_glasnika", lambda s: _tekst_predloga_glasnika(s), parsiraj_izbor_glasnika,
+            uslov=lambda s: bool(s.get("predlozi_glasnika")) and "program" not in s.podaci
+            and not s.get("kandidati")),
     Pitanje("varijanta", _tekst_varijanti, parsiraj_varijantu,
             uslov=lambda s: bool(s.get("kandidati")) and "program" not in s.podaci),
-    Pitanje("program", lambda s: "Pošaljite **službeni glasnik** sa programom — **DOCX** (najbolje, čita se "
-            "odmah i bez LLM-a, npr. sa paragraf.rs) ili PDF (dugme ispod), "
+    Pitanje("program", lambda s: "Napišite **pronađi** i sam ću potražiti važeći glasnik u zvaničnom ZUOV "
+            "katalogu i proveriti ga. Ili pošaljite **službeni glasnik** sa programom — **DOCX** (najbolje, čita "
+            "se odmah i bez LLM-a, npr. sa paragraf.rs) ili PDF (dugme ispod), "
             "ili napišite **primer** za probu, ili upišite teme ručno, svaku u svom redu:\n"
             "`Naziv teme ; časova obrade ; časova utvrđivanja`", parsiraj_program),
     Pitanje("program_ok", _tekst_programa, parsiraj_potvrdu_programa, potvrda=True),
@@ -518,6 +554,8 @@ class Intervju:
         p = self.trenutno()
         if p is None:
             return None
+        if p.kljuc == "program" and normalizuj(tekst).strip(" .!") in RECI_PRETRAGE:
+            return self.pronadji_glasnike()
         try:
             vrednost = self._parsiraj(p, tekst)
         except ValueError as e:
@@ -530,10 +568,47 @@ class Intervju:
             self.zavrseno.add(p.kljuc)
             self._postavi_varijantu(vrednost)
             return None
+        if p.kljuc == "izbor_glasnika":
+            if vrednost == 0:
+                self.s.pop("predlozi_glasnika")
+                return None
+            return self.preuzmi_glasnik(vrednost)
+        return self._sacuvaj(p, vrednost)
+
+    def _sacuvaj(self, p: Pitanje, vrednost) -> None:
         self.s[p.kljuc] = vrednost
         self.zavrseno.add(p.kljuc)
         self._posle(p.kljuc)
         return None
+
+    def pronadji_glasnike(self) -> str | None:
+        """Potraži važeće pravilnike u ZUOV katalogu. Vraća poruku ako ništa nije nađeno."""
+        from .izvori import pronadji_predloge
+        predlozi, opis = pronadji_predloge(self.s.get("tip_skole", "osnovna"), self.s["razred"], self.s["predmet"],
+                                           self.s.get("smer"), self.llm)
+        if not predlozi:
+            return f"{opis} Pošaljite glasnik dugmetom ispod ili upišite teme ručno."
+        self.s["predlozi_glasnika"] = predlozi
+        self.s["opis_kataloga"] = opis
+        return None
+
+    def preuzmi_glasnik(self, broj: int) -> str | None:
+        """Preuzmi izabrani pravilnik, proveri da sadrži program i postavi ga."""
+        from .izvori import proveri_pravilnik
+        predlog = self.s["predlozi_glasnika"][broj - 1]
+        provera = proveri_pravilnik(predlog.pravilnik, self.s["predmet"], self.s["razred"],
+                                    self.s.get("nedeljni_fond"), self.s.get("trajanje_srednje"))
+        self.s["provera_glasnika"] = provera
+        if provera.status != "provereno":
+            return f"{provera.poruka} Izaberite drugi broj ili pošaljite fajl dugmetom ispod."
+        izvor = provera.naslov or predlog.pravilnik.naziv
+        r = provera.referenca
+        if r and f"{r.broj}/{r.godina}" not in izvor:
+            izvor += f" — {provera.referenca.oznaka}"
+        greska = self.postavi_glasnik(provera.varijante, izvor)
+        if greska is None:
+            self.zavrseno.add("izbor_glasnika")
+        return greska
 
     def postavi_glasnik(self, varijante: list, izvor: str = "") -> str | None:
         """Aplikacija prosleđuje programe pročitane iz DOCX glasnika. Vraća poruku ako nema poklapanja."""

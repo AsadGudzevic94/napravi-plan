@@ -59,6 +59,72 @@ class Varijanta:
 # ---------------------------------------------------------------- čitanje fajla
 
 
+def blokovi_iz_html(html: str) -> list[Blok]:
+    """HTML glasnika (npr. Paragrafova demo baza) → isti blokovi kao iz DOCX-a: pasusi i tabele."""
+    from html.parser import HTMLParser
+
+    class _Citac(HTMLParser):
+        BLOK = {"p", "div", "h1", "h2", "h3", "h4", "h5", "h6", "li"}
+
+        def __init__(self):
+            super().__init__(convert_charrefs=True)
+            self.out: list[Blok] = []
+            self.tekst: list[str] = []
+            self.tabela: list[list[str]] | None = None
+            self.red: list[str] | None = None
+            self.celija: list[str] | None = None
+            self.dubina = 0  # ugnježdene tabele se spajaju u spoljnu
+
+        def _zavrsi_tekst(self):
+            t = re.sub(r"[ \t\xa0]+", " ", "".join(self.tekst)).strip()
+            if t:
+                self.out.append(Blok(tekst=t))
+            self.tekst = []
+
+        def handle_starttag(self, tag, attrs):
+            if tag == "table":
+                self.dubina += 1
+                if self.dubina == 1:
+                    self._zavrsi_tekst()
+                    self.tabela = []
+            elif self.dubina and tag == "tr" and self.dubina == 1:
+                self.red = []
+            elif self.dubina and tag in ("td", "th") and self.dubina == 1:
+                self.celija = []
+            elif tag == "br" or (tag in self.BLOK and self.celija is not None):
+                (self.celija if self.celija is not None else self.tekst).append("\n")
+            elif tag in self.BLOK and not self.dubina:
+                self._zavrsi_tekst()
+
+        def handle_endtag(self, tag):
+            if tag == "table" and self.dubina:
+                self.dubina -= 1
+                if self.dubina == 0 and self.tabela is not None:
+                    if self.tabela:
+                        self.out.append(Blok(tabela=self.tabela))
+                    self.tabela = None
+            elif tag in ("td", "th") and self.celija is not None and self.dubina == 1:
+                tx = "\n".join(l.strip() for l in re.sub(r"[ \t\xa0]+", " ", "".join(self.celija)).split("\n"))
+                tx = re.sub(r"\n{2,}", "\n", tx).strip()
+                if self.red is not None and (not self.red or self.red[-1] != tx):
+                    self.red.append(tx)
+                self.celija = None
+            elif tag == "tr" and self.red is not None and self.dubina == 1:
+                if self.red and self.tabela is not None:
+                    self.tabela.append(self.red)
+                self.red = None
+            elif tag in self.BLOK and not self.dubina:
+                self._zavrsi_tekst()
+
+        def handle_data(self, data):
+            (self.celija if self.celija is not None else self.tekst).append(data)
+
+    c = _Citac()
+    c.feed(html)
+    c._zavrsi_tekst()
+    return c.out
+
+
 def blokovi_iz_docx(sadrzaj: bytes) -> list[Blok]:
     import docx
     from docx.table import Table
@@ -112,8 +178,59 @@ def _razred(t: str) -> int | None:
     return int(m.group(1)) if m else None
 
 
+_CRTICA = re.compile(r"([^\W\d_])- ([^\W\d_])")
+ZAGLAVLJE = ("naziv predmeta", "cilj", "razred", "godisnji fond", "nedeljni fond")
+
+
+def _spoji_crtice(t: str) -> str:
+    """„ПРОПОРЦИО- НАЛНОСТ“ → „ПРОПОРЦИОНАЛНОСТ“ (prelom reči iz štampanog glasnika)."""
+    return _CRTICA.sub(r"\1\2", t)
+
+
 def _linije(celija: str) -> list[str]:
-    return [l.strip() for l in celija.splitlines() if l.strip()]
+    # „ТРИГОНО-“ + „МЕТРИЈА …“ (reč prelomljena na kraju reda) → jedan red
+    celija = re.sub(r"([^\W\d_])[-‐]\s*\n\s*[–-]?\s*([^\W\d_])", r"\1\2", celija)
+    return [_spoji_crtice(l.strip()) for l in celija.splitlines() if l.strip()]
+
+
+_STAVKA_PREDLOGA = re.compile(r"\((\d+)(?:\s*[;,]\s*(\d+)\s*\+\s*(\d+))?\)")
+
+
+def _predlog_casova(tekst: str) -> list[tuple[str, int, int | None, int | None]]:
+    """„Угао (17;7+10) Разломци (55; 23+32)“ → [(naziv, ukupno, obrada, ostalo), …].
+    Pasus je predlog samo ako se sastoji isključivo od takvih stavki."""
+    t = _spoji_crtice(tekst).strip().rstrip(".")
+    out, poz = [], 0
+    for m in _STAVKA_PREDLOGA.finditer(t):
+        naziv = t[poz:m.start()].strip(" ,;–-")
+        if not naziv or len(naziv) > 120:
+            return []
+        obrada = int(m.group(2)) if m.group(2) else None
+        out.append((naziv, int(m.group(1)), obrada, int(m.group(3)) if m.group(3) else None))
+        poz = m.end()
+    return out if out and not t[poz:].strip(" .;,") else []
+
+
+def _spoji_zaglavlja(blokovi: list[Blok]) -> list[Blok]:
+    """Pasusi „Разред<TAB>Пети“, „Годишњи фонд часова<TAB>144 часа“ … → jedna tabela zaglavlja predmeta."""
+    def je_zaglavlje(b: Blok) -> bool:
+        return (b.tabela is None and "\t" in b.tekst
+                and normalizuj(b.tekst.split("\t", 1)[0]).strip().startswith(ZAGLAVLJE))
+
+    out: list[Blok] = []
+    i = 0
+    while i < len(blokovi):
+        if je_zaglavlje(blokovi[i]):
+            redovi = []
+            while i < len(blokovi) and je_zaglavlje(blokovi[i]):
+                oznaka, _, vrednost = blokovi[i].tekst.partition("\t")
+                redovi.append([oznaka.strip(), vrednost.strip()])
+                i += 1
+            out.append(Blok(tabela=redovi))
+        else:
+            out.append(blokovi[i])
+            i += 1
+    return out
 
 
 def _teme_iz_celije(celija: str) -> list[Tema]:
@@ -144,7 +261,9 @@ def _isti_naziv(a: str, b: str) -> bool:
 
 
 def parsiraj_blokove(blokovi: list[Blok]) -> list[Varijanta]:
+    blokovi = _spoji_zaglavlja(blokovi)
     varijante: list[Varijanta] = []
+    nastavak: Varijanta | None = None  # tabela ishoda/tema koja se nastavlja na sledećoj strani
     predmet, opis = "", ""
     sekcija: list[Varijanta] = []  # varijante trenutnog predmeta (za oriјentacione časove)
     casovi_razred: int | None = None
@@ -152,6 +271,8 @@ def parsiraj_blokove(blokovi: list[Blok]) -> list[Varijanta]:
     for i, b in enumerate(blokovi):
         if b.tabela is None:
             t = b.tekst
+            if t.strip():
+                nastavak = None
             n = normalizuj(t)
             sledeci = blokovi[i + 1].tekst if i + 1 < len(blokovi) and blokovi[i + 1].tabela is None else ""
             if "\n" in t:  # „НАЗИВ\n(за ... профиле ...)“ u jednom paragrafu
@@ -166,6 +287,8 @@ def parsiraj_blokove(blokovi: list[Blok]) -> list[Varijanta]:
                 continue
             if "orijentacion" in n and "broj" in n and "casova" in n:
                 u_predlogu = True
+                if casovi_razred is None and len({v.razred for v in sekcija}) == 1:
+                    casovi_razred = sekcija[0].razred  # program samo za jedan razred (osnovna škola)
                 continue
             if u_predlogu:
                 r = _razred(t) if len(t) < 30 and "razred" in n else None
@@ -174,13 +297,19 @@ def parsiraj_blokove(blokovi: list[Blok]) -> list[Varijanta]:
                     for v in sekcija:
                         v.uputstvo.append(t)
                     continue
-                m = re.match(r"^(.+?)\s*\((\d+)\)\s*$", t)
-                if m and casovi_razred:
-                    for v in sekcija:
-                        if v.razred == casovi_razred:
+                # „Тема (19)“, „Brojevi (145; 55 + 90)“ — i više tema u istom pasusu
+                stavke = _predlog_casova(t)
+                if stavke and casovi_razred:
+                    for naziv, ukupno, obrada, ostalo in stavke:
+                        for v in sekcija:
+                            if v.razred != casovi_razred:
+                                continue
                             for tm in v.teme:
-                                if _isti_naziv(tm.naziv.rstrip("*"), m.group(1)):
-                                    tm.casova_obrada = int(m.group(2))
+                                if _isti_naziv(tm.naziv.rstrip("*"), naziv):
+                                    if obrada is not None:
+                                        tm.casova_obrada, tm.casova_utvrdjivanje = obrada, ostalo
+                                    else:
+                                        tm.casova_obrada = ukupno
                     continue
                 if n.startswith("napomena") and casovi_razred:
                     for v in sekcija:
@@ -196,7 +325,51 @@ def parsiraj_blokove(blokovi: list[Blok]) -> list[Varijanta]:
             continue
         # tabela
         tab = b.tabela
-        if not tab or not tab[0] or not normalizuj(tab[0][0]).startswith("razred") or len(tab[0]) < 2:
+        if not tab or not tab[0]:
+            continue
+        k0 = normalizuj(tab[0][0])
+        if k0.startswith("naziv predmeta") and len(tab[0]) >= 2:  # osnovna škola / novi programi gimnazije
+            predmet, opis, sekcija, u_predlogu, casovi_razred = tab[0][-1].strip(), "", [], False, None
+            zaglavlje = {normalizuj(r[0]).split()[0] if r[0].strip() else "": r[-1] for r in tab[1:] if len(r) >= 2}
+            razred = _razred(zaglavlje.get("razred", ""))
+            nedeljni = _broj(next((r[-1] for r in tab[1:] if normalizuj(r[0]).startswith("nedeljni fond")), ""))
+            godisnji = _broj(next((r[-1] for r in tab[1:] if normalizuj(r[0]).startswith("godisnji fond")), ""))
+            if razred:
+                fond = float(nedeljni or (round(godisnji / 36) if godisnji else 0))
+                v = Varijanta(predmet=predmet, opis=opis, razred=razred, nedeljni_fond=fond)
+                varijante.append(v)
+                sekcija.append(v)
+            continue
+        prva_ishodi = k0.startswith("ishodi") and sekcija and not sekcija[-1].teme and len(tab[0]) >= 3
+        if prva_ishodi or (nastavak is not None and not k0.startswith(ZAGLAVLJE)):
+            v = sekcija[-1] if prva_ishodi else nastavak  # „ISHODI | OBLAST/TEMA | SADRŽAJI“ (i nastavak)
+            nastavak = v
+            for red in (tab[1:] if prva_ishodi else tab):
+                if len(red) < 3:
+                    continue
+                ishodi_reda = _ishodi(red[0])
+                v.ishodi += ishodi_reda
+                if not red[-2].strip():
+                    continue
+                nove = _teme_iz_celije(red[-2]) or [Tema(redni_broj=0, naziv=_spoji_crtice(red[-2].strip()))]
+                for tm in nove:
+                    tm.ishodi = list(ishodi_reda)
+                nove[-1].sadrzaji += [l for l in _linije(red[-1])
+                                      if not re.fullmatch(r"(prvi|drugi|treci) deo", normalizuj(l))]
+                for tm in nove:
+                    if not tm.naziv:
+                        continue
+                    if v.teme and re.match(r"^[–‐-]", tm.naziv):  # tema prelomljena preko strane
+                        pre = v.teme[-1]
+                        pre.naziv = pre.naziv.rstrip("-‐ ") + tm.naziv.lstrip("–‐- ")
+                        pre.sadrzaji += tm.sadrzaji
+                        pre.ishodi += [i for i in tm.ishodi if i not in pre.ishodi]
+                    else:
+                        v.teme.append(tm)
+            for k, tm in enumerate(v.teme):
+                tm.redni_broj = k + 1
+            continue
+        if not k0.startswith("razred") or len(tab[0]) < 2:
             continue
         razred = _razred(tab[0][1])
         if not razred or not predmet:
@@ -209,7 +382,10 @@ def parsiraj_blokove(blokovi: list[Blok]) -> list[Varijanta]:
             if k.startswith("nedeljni fond") and len(red) > 1:
                 fond = float(_broj(red[1]) or 0)
                 napomena = " ".join(_linije(red[1])[1:])
-            elif k.startswith("ishodi") or k.startswith("godisnji fond"):
+            elif k.startswith("godisnji fond") and len(red) > 1:
+                if not fond and (g := _broj(red[1])):
+                    fond = float(round(g / 36))
+            elif k.startswith("ishodi"):
                 continue
             elif len(red) >= 2:
                 ishodi += _ishodi(red[0])
@@ -259,6 +435,8 @@ def _dodeli_ishode(teme: list[Tema], ishodi: list[str]) -> None:
     opste = {"resi", "resav", "koris", "izrac", "prime", "probl", "jedno", "osnov", "odred", "predst",
              "skicir", "analiz", "obraz", "matem", "zadat", "pomoc", "potre"}
     for tm in teme:
+        if tm.ishodi:  # već dodeljeni iz istog reda tabele (osnovna škola)
+            continue
         k = koreni(tm.naziv + " " + " ".join(tm.sadrzaji)) - opste
         ocene = [(len((koreni(i) - opste) & k), i) for i in ishodi]
         tm.ishodi = [i for o, i in ocene if o >= 2] or [i for o, i in ocene if o >= 1]

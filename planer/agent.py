@@ -63,6 +63,8 @@ POTVRDE = {
     "kompetencije_ok": "'da'; ili izmene, svaka u svom redu: '4: Fizika, Saobraćajna tehnika' (zameni predmete "
                        "za povezivanje teme 4), 'dodaj 3: Fizika', 'bez 1: Hemija', 'mk 2: komunikacija, saradnja'",
     "varijanta": "redni broj izabrane varijante (samo broj)",
+    "izbor_glasnika": "redni broj izabranog pravilnika (samo broj, npr. '1'), ili 'ne' ako će nastavnik "
+                      "poslati svoj fajl",
     "strategija": "'1' (proporcionalno skrati) ili '2' (bez izmena)",
 }
 
@@ -119,7 +121,11 @@ class Agent:
         if trenutno is None:
             return []
         if trenutno.kljuc in POTVRDE:
-            return self._potvrda(tekst, trenutno)
+            rez = self._potvrda(tekst, trenutno)
+            pr = self.iv.s.get("provera_glasnika")
+            if pr is not None and trenutno.kljuc == "izbor_glasnika":
+                self.koraci.append(f"📥 Provera glasnika: {pr.poruka[:110]}")
+            return rez
         upisano: list[str] = []
         potvrda = None
         if self.llm:
@@ -148,7 +154,11 @@ class Agent:
 
     def _potvrda(self, tekst: str, trenutno) -> list[str]:
         """Pitanje-potvrda: prvo parser bez LLM-a, a ako ne razume — LLM prevodi u komande."""
+        self.iv.s.pop("provera_glasnika")
         greska = self.iv.odgovori(tekst)
+        if self.iv.s.get("provera_glasnika") is not None:  # glasnik je preuzet i proveren — ne ponavljaj
+            pr = self.iv.s["provera_glasnika"]
+            return [f"⚠️ {greska}"] if greska else [f"✅ {pr.poruka}"]
         if not greska or not self.llm:
             return [f"⚠️ {greska}"] if greska else []
         upit = (f"Pitanje koje je agent postavio nastavniku:\n{trenutno.tekst(self.iv.s)[:1500]}\n\n"
@@ -191,6 +201,19 @@ class Agent:
             if p is None:
                 out += self._zavrsi()
                 break
+            if p.kljuc == "izbor_glasnika" and self.glasnik:  # nastavnik je ipak poslao svoj fajl
+                self.iv.s.pop("predlozi_glasnika")
+                continue
+            if p.kljuc == "program" and not self.glasnik and not self.iv.s.get("pretrazeno"):
+                self.iv.s["pretrazeno"] = True  # agent sam traži važeći glasnik u ZUOV katalogu
+                poruka = self.iv.pronadji_glasnike()
+                if poruka:
+                    self.koraci.append("🌐 Pretraga ZUOV kataloga: ništa nije nađeno")
+                    out.append(f"⚠️ {poruka}")
+                    break
+                predlozi = self.iv.s["predlozi_glasnika"]
+                self.koraci.append(f"🌐 {self.iv.s['opis_kataloga']}: {len(predlozi)} odgovarajućih pravilnika")
+                continue
             if p.kljuc == "program" and self.glasnik:
                 greska = self.iv.postavi_glasnik(*self.glasnik)
                 if greska:

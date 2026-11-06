@@ -18,15 +18,19 @@ potvrdi predloge — i preuzme gotove Word i Excel dokumente.
 
 ## Kako radi
 
-1. **Glasnik ima prednost.** Program (teme, ishodi, broj časova, inicijalni test, pismeni zadaci) čita
-   se direktno iz DOCX glasnika — npr. Pravilnika sa paragraf.rs. Plan ima tačno onoliko časova koliko
-   propisuje glasnik; višak iz kalendara ostaje kao rezerva.
-2. **Brojeve računa program, ne AI.** Kalendar (praznici, pravoslavni Uskrs, raspusti), raspodela tema
+1. **Pravi glasnik, pronađen i proveren.** Nastavnik ne mora da zna koji pravilnik važi: aplikacija u
+   zvaničnom ZUOV katalogu važećih propisa pronađe pravilnike za školu, smer i predmet i ponudi ih.
+   Nastavnik izabere broj, a aplikacija preuzme glasnik i **proveri** da zaista sadrži program za taj
+   predmet, razred i fond časova pre nego što ga upotrebi. Može se poslati i sopstveni DOCX.
+2. **Glasnik ima prednost.** Program (teme, ishodi, broj časova, inicijalni test, pismeni zadaci) čita
+   se direktno iz glasnika — za osnovne škole, gimnazije i stručne škole. Plan ima tačno onoliko časova
+   koliko propisuje glasnik; višak iz kalendara ostaje kao rezerva.
+3. **Brojeve računa program, ne AI.** Kalendar (praznici, pravoslavni Uskrs, raspusti), raspodela tema
    po mesecima, pismeni zadaci na blok času i po dva u polugodištu — sve je izračunato tačno.
-3. **Kompetencije i povezivanje sa obrazloženjem.** Za svaku temu aplikacija predlaže međupredmetne
+4. **Kompetencije i povezivanje sa obrazloženjem.** Za svaku temu aplikacija predlaže međupredmetne
    kompetencije i predmete za povezivanje — iz uputstva u glasniku, iz ishoda i logički (uključujući
    stručne predmete profila) — i navodi zašto. Nastavnik potvrđuje ili menja.
-4. **Provera pre preuzimanja.** Gotov plan prolazi 15 automatskih provera: zbir časova, nijedan čas na
+5. **Provera pre preuzimanja.** Gotov plan prolazi 15 automatskih provera: zbir časova, nijedan čas na
    praznik ili raspust, redosled tema, pismeni i ispravke, kompetencije, svaki mesec ima časove.
 
 Dva načina rada:
@@ -71,7 +75,8 @@ Besplatno na Streamlit Community Cloud, i sa telefona — uputstvo: [docs/OBJAVA
 ```
 app.py                        Streamlit aplikacija
 planer/
-  glasnik_parser.py           čitanje DOCX glasnika (programi, teme, ishodi, časovi)
+  izvori.py                   pronalaženje važećeg glasnika (ZUOV katalog) i provera
+  glasnik_parser.py           čitanje glasnika — DOCX i HTML (programi, teme, ishodi, časovi)
   ekstrakcija.py              čitanje PDF glasnika (uz AI)
   kalendar.py                 praznici, nastavni dani, datumi časova
   podrazumevani_kalendar.py   zvanični ili približan školski kalendar

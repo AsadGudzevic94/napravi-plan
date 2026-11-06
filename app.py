@@ -148,7 +148,7 @@ if ss.rezim == AGENT:
             st.rerun()
         if odg := st.chat_input("Napišite odgovor…"):
             ss.agent_poruke.append(("user", odg))
-            with st.spinner("Radim korak po korak…"):
+            with st.spinner("Radim korak po korak… (preuzimanje i provera glasnika traje do pola minuta)"):
                 ss.agent_poruke.append(("assistant", agent.korak(odg)))
             st.rerun()
         st.stop()
@@ -163,11 +163,12 @@ else:
     for uloga, tekst in ss.poruke:
         poruka(uloga, tekst)
     p = iv.trenutno()
-    if p and p.kljuc == "program":
+    if p and p.kljuc in ("program", "izbor_glasnika"):
         gl = st.file_uploader("Glasnik (DOCX ili PDF)", type=["docx", "pdf"])
         if gl is not None and ss.get("pdf_ime") != gl.name:
             ss.pdf_ime = gl.name
             ss.poruke.append(("user", f"Poslat glasnik: {gl.name}"))
+            iv.s.pop("predlozi_glasnika")
             with st.spinner("Čitam glasnik…"):
                 if gl.name.lower().endswith(".docx"):
                     bl = blokovi_iz_docx(gl.getvalue())
@@ -194,7 +195,9 @@ else:
     if p:
         if odg := st.chat_input("Napišite odgovor…"):
             ss.poruke.append(("user", odg))
-            postavi_pitanje(iv.odgovori(odg))
+            with st.spinner("Tražim i proveravam glasnik…" if p.kljuc in ("program", "izbor_glasnika")
+                            else "Radim…"):
+                postavi_pitanje(iv.odgovori(odg))
             st.rerun()
         st.stop()
     if ss.plan is None:
