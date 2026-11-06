@@ -50,6 +50,9 @@ with st.sidebar:
                    "Dodajte besplatan ključ u `.env` (vidi README).")
     ss.skola = st.text_input("Škola", ss.get("skola", ""))
     ss.nastavnik = st.text_input("Nastavnik", ss.get("nastavnik", ""))
+    ss.odeljenje = st.text_input("Odeljenje (npr. 3)", ss.get("odeljenje", ""))
+    ss.sa_datumima = st.checkbox("Datumi u operativnom planu", ss.get("sa_datumima", False),
+                                 help="ZUOV obrazac nema datume; uključite ako ih želite pored naziva jedinice.")
     if st.button("🔄 Novi plan"):
         for k in list(ss.keys()):
             del ss[k]
@@ -144,7 +147,8 @@ st.caption(f"Ukupno {gp['ukupno']} časova · " + " · ".join(
     f"{MESECI[m][:3]} {n}" for (g, m), n in gp["ukupno_po_mesecu"].items()))
 
 c1, c2 = st.columns(2)
-c1.download_button("⬇️ Globalni plan (.docx)", globalni_docx(program, gp, ss.nastavnik, ss.skola, pismo, iv.napomena_rezerve()),
+c1.download_button("⬇️ Globalni plan (.docx)", globalni_docx(program, gp, ss.nastavnik, ss.skola, pismo, iv.napomena_rezerve(), ss.odeljenje,
+                                 f"{iv.s['skolska_godina']}/{str(iv.s['skolska_godina'] + 1)[2:]}"),
                    file_name=f"globalni_{program.predmet}_{program.razred}.docx")
 c2.download_button("⬇️ Ceo plan (.xlsx)", plan_xlsx(program, gp, casovi, pismo),
                    file_name=f"plan_{program.predmet}_{program.razred}.xlsx")
@@ -164,5 +168,6 @@ st.dataframe(pd.DataFrame([{"Č.": c.redni_broj, "Datum": c.datum.strftime("%d.%
                            for c in mesecni]).map(lambda v: preslovi(v, pismo) if isinstance(v, str) else v),
              hide_index=True, width="stretch")
 st.download_button(f"⬇️ Operativni plan — {MESECI[izbor[1]]} (.docx)",
-                   operativni_docx(program, mesecni, izbor[1], ss.nastavnik, ss.skola, pismo),
+                   operativni_docx(program, mesecni, izbor[1], ss.nastavnik, ss.skola, pismo, ss.odeljenje,
+                                   iv.s.get("zelje", ""), ss.sa_datumima),
                    file_name=f"operativni_{program.predmet}_{MESECI[izbor[1]]}.docx")

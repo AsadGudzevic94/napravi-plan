@@ -19,6 +19,7 @@ _OPER = r"[=<>≤≥+\-−·/^√±]"
 _ZASTICENO = re.compile(
     r"\b(?:sin|cos|tg|ctg|arcsin|arccos|arctg|log|ln|lim|max|min)[₀-₉]*"
     r"|\b(?:Word|Excel|PDF|LLM)\b"
+    r"|\b(?=[IVX])X{0,3}(?:IX|IV|V?I{0,3})\b(?=\s*$|\s*/|\.?\s*(?:razred|polugod))"  # rimski brojevi (IX, XII, II/3)
     r"|[A-Za-z](?=[⁰¹²³⁴⁵⁶⁷⁸⁹ⁿ⁺⁻₀-₉])"
     rf"|(?<!{_SLOVO})[xyz](?!{_SLOVO})"
     rf"|(?<!{_SLOVO})[A-Za-z](?!{_SLOVO})(?=\s*(?:{_OPER}|\)))"

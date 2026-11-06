@@ -17,7 +17,10 @@ Cilj, arhitektura i plan razvoja: **[docs/PLAN.md](docs/PLAN.md)**
    glasnik; višak časova iz kalendara ostaje slobodan (rezerva, navedeni datumi). Samo ako kalendar ima
    manje časova, aplikacija pita kako da skrati.
 5. LLM napiše nazive nastavnih jedinica, ishode po času, metode i oblike rada.
-6. Preuzmete **.docx** (globalni i operativni) ili **.xlsx** (sve).
+6. Preuzmete **.docx** po **zvaničnim ZUOV obrascima** ([zuov.gov.rs/obrasci](https://zuov.gov.rs/obrasci/)):
+   *Godišnji plan* (Red. br. | Tema/oblast | Mesec IX–VI | Ukupno + tabela Međupredmetne kompetencije) i
+   *Operativni plan* (Oblast/Tema | Ishodi | Redni broj časa i naziv nastavne jedinice | Tip časa |
+   Međupredmetno povezivanje | Evaluacija isplaniranog), ili **.xlsx** sa svim časovima i datumima.
 
 ## Pokretanje
 ```bash

@@ -53,8 +53,12 @@ def test_obogati_i_izvoz():
     assert all(c.metode == "dijaloška" for c in mesec)
     gp = globalni_plan(casovi, teme)
     d = Document(io.BytesIO(globalni_docx(p, gp)))
-    assert len(d.tables[0].rows) == len(teme) + 2
+    assert len(d.tables[0].rows) == len(teme) + 3  # ZUOV: dva reda zaglavlja (MESEC / IX…VI) + Ukupno
+    assert [c.text for c in d.tables[0].rows[1].cells[2:12]] == ["IX", "X", "XI", "XII", "I", "II", "III", "IV",
+                                                                   "V", "VI"]
+    assert "MEĐUPREDMETNE KOMPETENCIJE" in d.tables[1].rows[0].cells[2].text
     d = Document(io.BytesIO(operativni_docx(p, mesec, 9)))
     assert len(d.tables[0].rows) == len(mesec) + 1
+    assert "EVALUACIJA ISPLANIRANOG" in d.tables[0].rows[0].cells[5].text
     wb = load_workbook(io.BytesIO(plan_xlsx(p, gp, casovi)))
     assert wb.sheetnames[0] == "Globalni plan" and "Septembar" in wb.sheetnames
