@@ -4,7 +4,6 @@ Besplatna aplikacija koja nastavniku osnovne i srednje škole pravi **globalni (
 i **operativni (mesečni)** plan rada na osnovu **službenog glasnika** (plan i program nastave
 i učenja), školskog kalendara i rasporeda časova — kroz kratak razgovor.
 
-Cilj, arhitektura i plan razvoja: **[docs/PLAN.md](docs/PLAN.md)**
 
 ## Kako radi
 1. Aplikacija pita: tip škole, razred, predmet, smer.

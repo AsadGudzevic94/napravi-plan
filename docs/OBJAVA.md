@@ -8,7 +8,7 @@ Aplikacija dobija stalnu adresu, npr. `https://napravi-plan.streamlit.app`.
 2. Dozvolite Streamlit-u pristup repozitorijumu **napravi-plan** kada pita.
 3. Pritisnite **Create app** → **Deploy a public app from GitHub** i popunite:
    - **Repository:** `AsadGudzevic94/napravi-plan`
-   - **Branch:** `claude/school-curriculum-planning-2gt54a`
+   - **Branch:** `main`
    - **Main file path:** `app.py`
    - **App URL:** npr. `napravi-plan` (ako je zauzeto, dodajte nešto: `napravi-plan-srbija`)
 4. Otvorite **Advanced settings**:

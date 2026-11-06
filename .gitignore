@@ -9,3 +9,8 @@ __pycache__/
 *.bundle
 izlaz/
 .streamlit/secrets.toml
+
+# lokalno za Claude Code (ne ide na GitHub)
+CLAUDE.md
+CLAUDE.local.md
+.claude/
