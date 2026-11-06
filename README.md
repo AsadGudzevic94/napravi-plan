@@ -8,7 +8,9 @@ Cilj, arhitektura i plan razvoja: **[docs/PLAN.md](docs/PLAN.md)**
 
 ## Kako radi
 1. Aplikacija pita: tip škole, razred, predmet, smer.
-2. Učitate PDF glasnika → LLM izvuče teme, ishode i broj časova (ili upišete teme ručno / „primer“).
+2. Učitate glasnik: **DOCX** (npr. Pravilnik sa paragraf.rs) se čita **bez LLM-a** — predmet, varijanta po
+   nedeljnom fondu i trajanju profila, teme, sadržaji, ishodi, oriјentacioni broj časova, inicijalni test i
+   pismeni zadaci. PDF čita LLM. Može i ručni unos ili „primer“.
 3. Potvrdite/izmenite teme, nedeljni fond, dane kada držite čas i školski kalendar.
 4. **Kod** (ne LLM) tačno izračuna sve datume časova (praznici, raspusti, pravoslavni Uskrs)
    i rasporedi teme po mesecima; ako fond ne odgovara kalendaru, vi birate strategiju.
@@ -39,7 +41,9 @@ planer/
   podrazumevani_kalendar.py približan kalendar ako nema zvaničnog JSON-a
   raspodela.py              usklađivanje fonda, provere, globalni/operativni plan
   llm.py                    jedan klijent za Groq/Gemini/OpenRouter/Ollama
-  ekstrakcija.py            PDF glasnika → odeljak predmeta → JSON program
+  glasnik_parser.py         DOCX Pravilnika → programi (bez LLM-a)
+  ekstrakcija.py            PDF glasnika → odeljak predmeta → JSON program (LLM)
+  pismo.py                  ćirilica ↔ latinica
   sadrzaj.py                LLM: nazivi jedinica, ishodi, metode, oblici rada
   intervju.py               razgovor sa nastavnikom (lista pitanja + tumačenje)
   izvoz.py                  DOCX i XLSX

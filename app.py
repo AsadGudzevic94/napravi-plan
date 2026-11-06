@@ -8,12 +8,13 @@ import pandas as pd
 import streamlit as st
 
 from planer.ekstrakcija import izvuci_program, nedeljni_fond_iz_teksta, pronadji_odeljak, stranice_iz_pdf
+from planer.glasnik_parser import blokovi_iz_docx, naslov_izvora, parsiraj_blokove
 from planer.intervju import Intervju
 from planer.izvoz import globalni_docx, operativni_docx, plan_xlsx
 from planer.llm import LLM, LLMGreska
 from planer.modeli import MESECI
-from planer.raspodela import globalni_plan, meseci_u_godini, operativni_plan, rasporedi
-from planer.sadrzaj import obogati_operativni, popuni_jedinice
+from planer.raspodela import RB_INICIJALNI, RB_PISMENI, globalni_plan, meseci_u_godini, operativni_plan, rasporedi
+from planer.sadrzaj import obogati_operativni, podrazumevano_operativno, popuni_jedinice
 
 st.set_page_config(page_title="Napravi plan", page_icon="📘", layout="wide")
 
@@ -64,7 +65,15 @@ for uloga, tekst in ss.poruke:
 
 p = iv.trenutno()
 if p and p.kljuc == "program":
-    pdf = st.file_uploader("PDF službenog / prosvetnog glasnika", type=["pdf"])
+    pdf = st.file_uploader("Službeni / prosvetni glasnik (DOCX ili PDF)", type=["docx", "pdf"])
+    if pdf is not None and ss.get("pdf_ime") != pdf.name and pdf.name.lower().endswith(".docx"):
+        ss.pdf_ime = pdf.name
+        with st.spinner("Čitam glasnik (bez LLM-a)…"):
+            blokovi = blokovi_iz_docx(pdf.getvalue())
+            greska = iv.postavi_glasnik(parsiraj_blokove(blokovi), naslov_izvora(blokovi) or pdf.name)
+        ss.poruke.append(("user", f"📎 {pdf.name}"))
+        postavi_pitanje(greska)
+        st.rerun()
     if pdf is not None and ss.get("pdf_ime") != pdf.name:
         ss.pdf_ime = pdf.name
         with st.spinner("Čitam glasnik…"):
@@ -105,11 +114,17 @@ if ss.plan is None:
     if llm:
         with st.spinner("Pišem nazive nastavnih jedinica…"):
             program = iv.s["program"]
-            teme = popuni_jedinice(llm, program, teme, iv.s.get("udzbenik", ""))
-            casovi, nije_stalo = rasporedi(teme, iv.s.slotovi())
+            redovne = [t for t in teme if t.redni_broj not in (RB_INICIJALNI, RB_PISMENI)]
+            redovne = popuni_jedinice(llm, program, redovne, iv.s.get("udzbenik", ""))
+            casovi, nije_stalo = rasporedi(redovne, iv.s.slotovi(), program,
+                                           kraj_polugodista=iv.s["kalendar"].kraj_prvog_polugodista)
+            po_rb = {t.redni_broj: t for t in redovne}
+            teme = [po_rb.get(t.redni_broj, t) for t in teme]
+    casovi = podrazumevano_operativno(casovi, teme)
     ss.plan = {"teme": teme, "casovi": casovi, "nije_stalo": nije_stalo}
 
 program = iv.s["program"]
+pismo = iv.s.get("pismo", "latinica")
 teme, casovi = ss.plan["teme"], ss.plan["casovi"]
 gp = globalni_plan(casovi, teme)
 
@@ -117,7 +132,7 @@ st.header(f"Globalni plan — {program.predmet}, {program.razred}. razred")
 if ss.plan["nije_stalo"]:
     st.error(f"{ss.plan['nije_stalo']} časova iz programa nije stalo u kalendar. Kliknite „Novi plan“ i "
              "izaberite proporcionalno usklađivanje.")
-df = pd.DataFrame([{"R.b.": r["rb"], "Tema": r["tema"],
+df = pd.DataFrame([{"R.b.": r["rb"] if 0 < r["rb"] < 900 else "", "Tema": r["tema"],
                     **{MESECI[m][:3]: r["po_mesecu"][(g, m)] for g, m in gp["meseci"]},
                     "Obrada": r["obrada"], "Utvrđ.": r["utvrdjivanje"], "Ostalo": r["ostalo"],
                     "Ukupno": r["ukupno"]} for r in gp["redovi"]])
@@ -126,9 +141,9 @@ st.caption(f"Ukupno {gp['ukupno']} časova · " + " · ".join(
     f"{MESECI[m][:3]} {n}" for (g, m), n in gp["ukupno_po_mesecu"].items()))
 
 c1, c2 = st.columns(2)
-c1.download_button("⬇️ Globalni plan (.docx)", globalni_docx(program, gp, ss.nastavnik, ss.skola),
+c1.download_button("⬇️ Globalni plan (.docx)", globalni_docx(program, gp, ss.nastavnik, ss.skola, pismo),
                    file_name=f"globalni_{program.predmet}_{program.razred}.docx")
-c2.download_button("⬇️ Ceo plan (.xlsx)", plan_xlsx(program, gp, casovi),
+c2.download_button("⬇️ Ceo plan (.xlsx)", plan_xlsx(program, gp, casovi, pismo),
                    file_name=f"plan_{program.predmet}_{program.razred}.xlsx")
 
 st.header("Operativni (mesečni) plan")
@@ -145,5 +160,5 @@ st.dataframe(pd.DataFrame([{"Č.": c.redni_broj, "Datum": c.datum.strftime("%d.%
                             "Metode": c.metode, "Oblici rada": c.oblici_rada, "Korelacija": c.korelacija}
                            for c in mesecni]), hide_index=True, width="stretch")
 st.download_button(f"⬇️ Operativni plan — {MESECI[izbor[1]]} (.docx)",
-                   operativni_docx(program, mesecni, izbor[1], ss.nastavnik, ss.skola),
+                   operativni_docx(program, mesecni, izbor[1], ss.nastavnik, ss.skola, pismo),
                    file_name=f"operativni_{program.predmet}_{MESECI[izbor[1]]}.docx")

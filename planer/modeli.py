@@ -6,7 +6,8 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
 
-TipCasa = Literal["obrada", "utvrđivanje", "provera", "sistematizacija", "rezerva"]
+TipCasa = Literal["obrada", "utvrđivanje", "provera", "sistematizacija", "rezerva", "pismeni", "ispravka",
+                  "inicijalni"]
 
 MESECI = {
     9: "Septembar", 10: "Oktobar", 11: "Novembar", 12: "Decembar",
@@ -47,16 +48,29 @@ class Program(BaseModel):
     godisnji_fond: int | None = None
     izvor: str = ""  # npr. "Službeni glasnik RS – Prosvetni glasnik br. X/20YY"
     teme: list[Tema] = Field(default_factory=list)
+    # posebni časovi koje glasnik propisuje van tema
+    inicijalni_casova: int = 0  # inicijalni test + analiza
+    pismeni_broj: int = 0  # broj pismenih zadataka u godini
+    pismeni_trajanje: int = 1  # časova po pismenom (npr. 2 = dvočas)
+    pismeni_ispravka: bool = True  # posle svakog pismenog čas ispravke
 
     @model_validator(mode="after")
     def _popuni_godisnji(self) -> "Program":
         if self.godisnji_fond is None:
-            self.godisnji_fond = sum(t.casova_ukupno for t in self.teme) or None
+            self.godisnji_fond = (sum(t.casova_ukupno for t in self.teme) + self.posebnih_casova) or None
         return self
 
     @property
     def zbir_tema(self) -> int:
         return sum(t.casova_ukupno for t in self.teme)
+
+    @property
+    def posebnih_casova(self) -> int:
+        return self.inicijalni_casova + self.pismeni_broj * (self.pismeni_trajanje + int(self.pismeni_ispravka))
+
+    @property
+    def ukupno_casova(self) -> int:
+        return self.zbir_tema + self.posebnih_casova
 
 
 class Raspust(BaseModel):
@@ -83,6 +97,7 @@ class SkolskiKalendar(BaseModel):
     pocetak: date
     kraj_prvog_polugodista: date
     kraj: date
+    kraj_zavrsni: date | None = None  # kraj nastave za završni razred, ako se razlikuje
     raspusti: list[Raspust] = Field(default_factory=list)
     dodatni_neradni: list[NeradniDan] = Field(default_factory=list)
     zamene: list[Zamena] = Field(default_factory=list)

@@ -7,7 +7,7 @@ from planer.ekstrakcija import izvuci_program
 from planer.intervju import ucitaj_primer
 from planer.izvoz import globalni_docx, operativni_docx, plan_xlsx
 from planer.llm import izvuci_json
-from planer.raspodela import globalni_plan, napravi_plan, operativni_plan
+from planer.raspodela import globalni_plan, napravi_plan, operativni_plan, sekvenca_jedinica
 from planer.sadrzaj import generisi_jedinice, obogati_operativni
 from tests.test_raspodela import slotovi
 
@@ -41,7 +41,7 @@ def test_jedinice_cuvaju_tipove_i_broj():
     j = generisi_jedinice(llm, p, t)
     assert len(j) == t.casova_ukupno
     assert j[0].naziv == "J0" and j[0].tip == "obrada"
-    assert j[-1].naziv.startswith(t.naziv)  # ostatak šablonski
+    assert j[-1].naziv == sekvenca_jedinica(t)[-1].naziv  # ostatak šablonski
 
 
 def test_obogati_i_izvoz():

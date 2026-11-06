@@ -74,3 +74,44 @@ def obogati_operativni(llm: LLM, program: Program, casovi: list[Cas], teme: list
         novi.append(c.model_copy(update={k: str(x.get(k, "") or "") for k in
                                          ("ishodi", "metode", "oblici_rada", "korelacija")}))
     return novi
+
+
+METODE = {
+    "obrada": ("monološka, dijaloška, demonstrativna", "frontalni, individualni"),
+    "utvrđivanje": ("dijaloška, rešavanje zadataka", "individualni, rad u paru, grupni"),
+    "sistematizacija": ("dijaloška, rešavanje zadataka", "frontalni, grupni"),
+    "provera": ("pisani rad", "individualni"),
+    "pismeni": ("pisani rad", "individualni"),
+    "inicijalni": ("pisani rad, analiza", "individualni, frontalni"),
+    "ispravka": ("dijaloška, analiza grešaka", "frontalni, individualni"),
+    "rezerva": ("dijaloška, rešavanje zadataka", "individualni, grupni"),
+}
+
+
+def podrazumevano_operativno(casovi: list[Cas], teme: list[Tema]) -> list[Cas]:
+    """Bez LLM-a: ishodi iz glasnika (najbliži nazivu jedinice) i uobičajene metode/oblici po tipu časa."""
+    import re
+
+    from .ekstrakcija import normalizuj
+
+    def koreni(t: str) -> set[str]:
+        return {w[:5] for w in re.findall(r"[a-z]{5,}", normalizuj(t))}
+
+    ishodi_tema = {t.redni_broj: t.ishodi for t in teme}
+    novi = []
+    for c in casovi:
+        upd = {}
+        if not c.ishodi and ishodi_tema.get(c.tema_rb):
+            k = koreni(c.jedinica)
+            ocene = sorted(((len(koreni(i) & k), n, i) for n, i in enumerate(ishodi_tema[c.tema_rb])),
+                           key=lambda x: (-x[0], x[1]))
+            najbolja = ocene[0][0] if ocene else 0
+            izabrani = [i for o, _, i in ocene if o > 0 and o == najbolja][:2] or ishodi_tema[c.tema_rb][:1]
+            upd["ishodi"] = "; ".join(izabrani)
+        m, o = METODE.get(c.tip, ("", ""))
+        if not c.metode:
+            upd["metode"] = m
+        if not c.oblici_rada:
+            upd["oblici_rada"] = o
+        novi.append(c.model_copy(update=upd))
+    return novi

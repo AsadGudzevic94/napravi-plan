@@ -1,0 +1,19 @@
+{
+  "naziv": "Srednje škole 2026/27 – Pravilnik o kalendaru (Sl. glasnik RS – Prosvetni glasnik 3/2026), van AP Vojvodine",
+  "drzava": "srbija",
+  "pocetak": "2026-09-01",
+  "kraj_prvog_polugodista": "2026-12-31",
+  "kraj": "2027-06-18",
+  "kraj_zavrsni": "2027-05-21",
+  "raspusti": [
+    {"naziv": "Jesenji raspust", "od": "2026-11-11", "do": "2026-11-13"},
+    {"naziv": "Zimski raspust", "od": "2027-01-04", "do": "2027-01-15"},
+    {"naziv": "Sretenjski raspust", "od": "2027-02-15", "do": "2027-02-19"},
+    {"naziv": "Prolećni raspust", "od": "2027-04-30", "do": "2027-05-04"}
+  ],
+  "dodatni_neradni": [
+    {"datum": "2026-12-31", "naziv": "Radni, nenastavni dan"},
+    {"datum": "2027-01-27", "naziv": "Sveti Sava – radni, nenastavni dan"}
+  ],
+  "zamene": []
+}

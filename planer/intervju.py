@@ -242,7 +242,8 @@ def _tekst_programa(s: "Stanje") -> str:
         upozorenje = "\n⚠️ Neke teme nemaju broj časova — unesite ih (npr. `2 ; 18 ; 6`)."
     return (f"Program: **{p.predmet}**, {p.razred}. razred{', smer ' + p.smer if p.smer else ''} "
             f"({p.izvor or 'izvor nepoznat'})\n\n" + "\n".join(redovi) +
-            f"\n\n**Ukupno: {p.zbir_tema} časova.**{upozorenje}\n\n"
+            (f"\n\nPosebni časovi (inicijalni, pismeni): {p.posebnih_casova}" if p.posebnih_casova else "") +
+            f"\n\n**Ukupno: {p.ukupno_casova} časova.**{upozorenje}\n\n"
             "Da li je ovo tačno? Napišite „da“, ili izmene: `3 ; 25`, `3 ; 20 ; 5`, `redosled 2,1,3,...`, `obriši 4`.")
 
 
@@ -260,7 +261,75 @@ def _tekst_kalendara(s: "Stanje") -> str:
 
 
 def _treba_uskladjivanje(s: "Stanje") -> bool:
-    return len(s.slotovi()) != s["program"].zbir_tema
+    return len(s.slotovi()) != s["program"].ukupno_casova
+
+
+def _samo_ukupno(s: "Stanje") -> bool:
+    p = s.get("program")
+    return bool(p) and all(t.casova_utvrdjivanje == 0 and t.casova_ostalo == 0 for t in p.teme) and \
+        any(t.casova_obrada > 2 for t in p.teme)
+
+
+def _tekst_varijanti(s: "Stanje") -> str:
+    redovi = "\n".join(f"{i + 1}) {v.naziv()}" for i, v in enumerate(s["kandidati"]))
+    return f"U glasniku ima više programa koji odgovaraju. Koji je vaš? Napišite broj.\n\n{redovi}"
+
+
+def parsiraj_varijantu(t: str, s: "Stanje"):
+    k = s["kandidati"]
+    m = re.search(r"\d+", t)
+    if not m or not 1 <= int(m.group()) <= len(k):
+        raise ValueError(f"Napišite broj od 1 do {len(k)}.")
+    return k[int(m.group()) - 1]
+
+
+def _tekst_pismenih(s: "Stanje") -> str:
+    p: Program = s["program"]
+    delovi = []
+    if p.inicijalni_casova:
+        delovi.append(f"- inicijalni test i analiza: **{p.inicijalni_casova}** časa, na početku godine")
+    if p.pismeni_broj:
+        delovi.append(f"- **{p.pismeni_broj}** pismena zadatka po **{p.pismeni_trajanje}** časa"
+                      + (" + ispravka (1 čas)" if p.pismeni_ispravka else "")
+                      + f" = **{p.pismeni_broj * (p.pismeni_trajanje + p.pismeni_ispravka)}** časova, ravnomerno kroz godinu")
+    return ("Glasnik predviđa i časove van tema:\n" + "\n".join(delovi) +
+            "\n\nDa li je tako? „da“, ili izmene: `pismeni 2`, `trajanje 1`, `inicijalni 0`, `bez ispravke`.")
+
+
+def parsiraj_pismene(t: str, s: "Stanje") -> bool:
+    if _da_ne(t) is True:
+        return True
+    p: Program = s["program"]
+    n = normalizuj(t)
+    izm = False
+    if m := re.search(r"pismen\D*(\d+)", n):
+        p.pismeni_broj, izm = int(m.group(1)), True
+    if m := re.search(r"trajanj\D*(\d+)", n):
+        p.pismeni_trajanje, izm = max(1, int(m.group(1))), True
+    if m := re.search(r"inicijal\D*(\d+)", n):
+        p.inicijalni_casova, izm = int(m.group(1)), True
+    if "bez ispravk" in n:
+        p.pismeni_ispravka, izm = False, True
+    if not izm:
+        raise ValueError("Napišite „da“ ili izmene, npr. `pismeni 2`, `trajanje 1`, `inicijalni 0`, `bez ispravke`.")
+    return False
+
+
+def parsiraj_procenat(t: str, s: "Stanje") -> float:
+    v = parsiraj_broj(t, s)
+    v = v * 100 if v <= 1 else v
+    if not 10 <= v <= 90:
+        raise ValueError("Napišite procenat između 10 i 90.")
+    return v / 100
+
+
+def parsiraj_pismo(t: str, s: "Stanje") -> str:
+    n = normalizuj(t)
+    if n.startswith("c") or "cir" in n:
+        return "ćirilica"
+    if n.startswith("l") or "lat" in n:
+        return "latinica"
+    raise ValueError("Napišite „ćirilica“ ili „latinica“.")
 
 
 PITANJA: list[Pitanje] = [
@@ -272,33 +341,45 @@ PITANJA: list[Pitanje] = [
             "elektrotehničar računara)?", parsiraj_tekst, uslov=lambda s: s.get("tip_skole") == "srednja"),
     Pitanje("trajanje_srednje", lambda s: "Koliko godina traje taj smer (3 ili 4)?", parsiraj_ceo,
             uslov=lambda s: s.get("tip_skole") == "srednja", format_za_llm="broj 3 ili 4"),
-    Pitanje("program", lambda s: "Pošaljite **PDF službenog glasnika** sa planom i programom (dugme ispod), "
+    Pitanje("nedeljni_fond", lambda s: "Koliko časova **nedeljno** ima predmet u ovom odeljenju?",
+            parsiraj_broj, format_za_llm="broj časova nedeljno"),
+    Pitanje("varijanta", _tekst_varijanti, parsiraj_varijantu,
+            uslov=lambda s: bool(s.get("kandidati")) and "program" not in s.podaci),
+    Pitanje("program", lambda s: "Pošaljite **službeni glasnik** sa programom — **DOCX** (najbolje, čita se "
+            "odmah i bez LLM-a, npr. sa paragraf.rs) ili PDF (dugme ispod), "
             "ili napišite **primer** za probu, ili upišite teme ručno, svaku u svom redu:\n"
             "`Naziv teme ; časova obrade ; časova utvrđivanja`", parsiraj_program),
     Pitanje("program_ok", _tekst_programa, parsiraj_potvrdu_programa, potvrda=True),
-    Pitanje("nedeljni_fond", lambda s: "Koliko časova **nedeljno** ima predmet?"
-            + (f" (po programu: {s['program'].nedeljni_fond:g} — napišite broj da potvrdite)"
-               if s.get("program") and s["program"].nedeljni_fond else ""),
-            parsiraj_broj, format_za_llm="broj časova nedeljno"),
+    Pitanje("udeo_obrade", lambda s: "Glasnik daje samo **ukupan** broj časova po temi. Koliki deo časova da "
+            "bude **obrada** novog gradiva, a ostatak utvrđivanje i vežbanje? Napišite procenat (npr. **40** → "
+            "40% obrada, 60% utvrđivanje).", parsiraj_procenat, uslov=_samo_ukupno,
+            format_za_llm="procenat obrade, ceo broj 10-90"),
+    Pitanje("pismeni_ok", _tekst_pismenih, parsiraj_pismene, potvrda=True,
+            uslov=lambda s: "program" in s.podaci and (s["program"].pismeni_broj or s["program"].inicijalni_casova)),
     Pitanje("raspored", lambda s: "Kojim **danima** držite ovaj čas u ovom odeljenju? "
-            "(npr. „ponedeljak i četvrtak“, ili „utorak 2, petak 1“ za blok čas)", parsiraj_raspored,
+            "(npr. „ponedeljak i četvrtak“, ili „utorak 2, petak 1“ za blok čas)"
+            + (" — pismeni zadaci traju 2 časa, pa je važno da navedete blok čas ako ga imate."
+               if s.get("program") and s["program"].pismeni_trajanje > 1 else ""), parsiraj_raspored,
             format_za_llm="dani skraćeno sa brojem časova, npr. 'pon 1, cet 2'"),
     Pitanje("skolska_godina", lambda s: f"Za koju **školsku godinu**? (npr. {date.today().year if date.today().month >= 7 else date.today().year - 1}/"
             f"{str((date.today().year if date.today().month >= 7 else date.today().year - 1) + 1)[2:]})",
             parsiraj_godinu, format_za_llm="početna godina, npr. 2026"),
     Pitanje("kalendar_ok", _tekst_kalendara, parsiraj_kalendar, potvrda=True),
     Pitanje("strategija", lambda s: f"Po kalendaru imate **{len(s.slotovi())}** časova, a program predviđa "
-            f"**{s['program'].zbir_tema}**. Šta da uradim?\n\n1) **proporcionalno** prilagodim broj časova "
-            "svake teme\n2) **rezerva** — višak časova stavim kao sistematizaciju na kraj (ako manjka, "
+            f"**{s['program'].ukupno_casova}**. Šta da uradim?\n\n1) **proporcionalno** prilagodim broj časova "
+            "svake teme\n2) **rezerva** — broj časova po temama ostaje kao u glasniku, a višak stavim kao ponavljanje i sistematizaciju na kraj (ako manjka, "
             "proporcionalno skratim)\n3) **bez izmena** — ostavim kako je u programu",
             parsiraj_strategiju, uslov=_treba_uskladjivanje, format_za_llm="1, 2 ili 3"),
-    Pitanje("broj_provera", lambda s: "Koliko **pismenih / kontrolnih provera** planirate tokom godine? "
-            "(0 ako ih nema; raspodeliću ih ravnomerno po temama)", parsiraj_ceo,
+    Pitanje("broj_provera", lambda s: ("Koliko **kontrolnih provera** (pored pismenih zadataka) planirate? "
+            if s["program"].pismeni_broj else "Koliko **pismenih / kontrolnih provera** planirate tokom godine? ")
+            + "(0 ako ih nema; raspodeliću ih ravnomerno po temama)", parsiraj_ceo,
             format_za_llm="ceo broj"),
     Pitanje("udzbenik", lambda s: "Koji **udžbenik** (izdavač/autor) koristite? (ili „-“ za preskakanje)",
             parsiraj_opciono),
     Pitanje("zelje", lambda s: "Imate li želje za **metode i oblike rada** ili korelaciju sa drugim "
             "predmetima? (ili „-“)", parsiraj_opciono),
+    Pitanje("pismo", lambda s: "Na kom **pismu** da napravim plan — **ćirilica** ili **latinica**?",
+            parsiraj_pismo, format_za_llm="'ćirilica' ili 'latinica'"),
 ]
 
 
@@ -359,10 +440,33 @@ class Intervju:
             if vrednost:
                 self.zavrseno.add(p.kljuc)
             return None
+        if p.kljuc == "varijanta":
+            self.zavrseno.add(p.kljuc)
+            self._postavi_varijantu(vrednost)
+            return None
         self.s[p.kljuc] = vrednost
         self.zavrseno.add(p.kljuc)
         self._posle(p.kljuc)
         return None
+
+    def postavi_glasnik(self, varijante: list, izvor: str = "") -> str | None:
+        """Aplikacija prosleđuje programe pročitane iz DOCX glasnika. Vraća poruku ako nema poklapanja."""
+        from .glasnik_parser import izaberi
+        kand = izaberi(varijante, self.s["predmet"], self.s["razred"], self.s.get("nedeljni_fond"),
+                       self.s.get("trajanje_srednje"))
+        if not kand:
+            return (f"U glasniku nisam našao predmet „{self.s['predmet']}“ za {self.s['razred']}. razred. "
+                    "Proverite naziv predmeta ili pošaljite drugi glasnik.")
+        self.s["izvor"] = izvor
+        if len(kand) == 1:
+            self._postavi_varijantu(kand[0])
+        else:
+            self.s["kandidati"] = kand
+        return None
+
+    def _postavi_varijantu(self, v) -> None:
+        from .glasnik_parser import u_program
+        self.postavi_program(u_program(v, self.s.get("smer"), self.s.get("izvor", ""), self.s.get("tip_skole")))
 
     def postavi_program(self, program: Program) -> None:
         """Koristi aplikacija kada je program izvučen iz PDF-a."""
@@ -396,8 +500,8 @@ class Intervju:
             p.razred = self.s.get("razred", p.razred)
             p.predmet = p.predmet or self.s.get("predmet", "")
             p.smer = p.smer or self.s.get("smer")
-        if kljuc == "nedeljni_fond":
-            self.s["program"].nedeljni_fond = self.s["nedeljni_fond"]
+            if self.s.get("nedeljni_fond"):
+                p.nedeljni_fond = self.s["nedeljni_fond"]
         if kljuc == "raspored":
             self.s.pop("slotovi")
         if kljuc == "skolska_godina":
@@ -412,4 +516,6 @@ class Intervju:
         """Posle intervjua: (teme, časovi, broj časova koji nisu stali)."""
         return napravi_plan(self.s["program"], self.s.slotovi(),
                             strategija=self.s.get("strategija", "bez_izmena"),
-                            broj_provera=self.s.get("broj_provera", 0))
+                            broj_provera=self.s.get("broj_provera", 0),
+                            udeo_obrade=self.s.get("udeo_obrade"),
+                            kraj_polugodista=self.s["kalendar"].kraj_prvog_polugodista)

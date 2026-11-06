@@ -37,7 +37,11 @@ def kalendar_za(godina: int, tip_skole: str, razred: int, drzava: str = "srbija"
     for ime in (f"{oznaka}_{tip_skole}_{razred}.json", f"{oznaka}_{tip_skole}.json", f"{oznaka}.json"):
         p = DATA / ime
         if p.exists():
-            return ucitaj_kalendar(p)
+            k = ucitaj_kalendar(p)
+            if zavrsni_razred(tip_skole, razred, trajanje_srednje) and k.kraj_zavrsni:
+                k.kraj = k.kraj_zavrsni
+                k.naziv += " – završni razred (proveriti datum za svoj profil)"
+            return k
 
     pocetak = _radni_dan_od(date(godina, 9, 1))
     zimski_od = date(godina, 12, 31)
