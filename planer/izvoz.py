@@ -195,10 +195,12 @@ def globalni_docx(p: Program, gp: dict, nastavnik: str = "", skola: str = "", pi
     for j, h in enumerate(("Redni broj", "TEMA/\nOBLAST", "MEĐUPREDMETNE KOMPETENCIJE")):
         _upisi(t2.cell(0, j), h, pismo, True, centar=True)
     mk = _mk(p)
+    po_nazivu = {t.naziv: t for t in p.teme}
     for i, r in enumerate(redovne):
+        tm = po_nazivu.get(r["tema"])
         _upisi(t2.cell(1 + i, 0), f"{i + 1}.", pismo, centar=True)
         _upisi(t2.cell(1 + i, 1), r["tema"], pismo, bold=True)
-        _upisi(t2.cell(1 + i, 2), mk, pismo)
+        _upisi(t2.cell(1 + i, 2), ", ".join(tm.kompetencije) if tm and tm.kompetencije else mk, pismo)
     _sirine(t2, [2.0, 9.0, 14.7])
 
     # raspodela po tipovima časa (program nastave i učenja to traži u godišnjem planu)
@@ -266,12 +268,16 @@ def operativni_docx(p: Program, casovi: list[Cas], mesec: int, nastavnik: str = 
            "MEĐUPREDMETNO POVEZIVANJE\nNavesti predmet/e:", "EVALUACIJA ISPLANIRANOG NAKON OSTVARIVANJA")
     for j, h in enumerate(zag):
         _upisi(t.cell(0, j), h, pismo, True, 9, centar=True)
-    mk = _mk(p)
+    mk_opste = _mk(p)
+    po_nazivu = {t.naziv: t for t in p.teme}
     red = 1
     for tema, cc in grupe:
+        tm = po_nazivu.get(tema)
+        mk = ", ".join(tm.kompetencije) if tm and tm.kompetencije else mk_opste
         cc = sorted(cc, key=lambda c: c.redni_broj)
         ishodi = list(dict.fromkeys(i.strip() for c in cc for i in c.ishodi.split(";") if i.strip()))
-        predmeti = korelacija or ", ".join(dict.fromkeys(c.korelacija for c in cc if c.korelacija))
+        predmeti = (", ".join(tm.korelacija) if tm and tm.korelacija else "") or korelacija or \
+            ", ".join(dict.fromkeys(c.korelacija for c in cc if c.korelacija))
         for k, c in enumerate(cc):
             datum = f" ({c.datum:%d.%m.})" if sa_datumima else ""
             _upisi(t.cell(red + k, 2), f"{c.redni_broj}. {c.jedinica}{datum}", pismo, velicina=9)

@@ -22,6 +22,18 @@ Cilj, arhitektura i plan razvoja: **[docs/PLAN.md](docs/PLAN.md)**
    *Operativni plan* (Oblast/Tema | Ishodi | Redni broj časa i naziv nastavne jedinice | Tip časa |
    Međupredmetno povezivanje | Evaluacija isplaniranog), ili **.xlsx** sa svim časovima i datumima.
 
+## Dva načina rada
+- **Vođeni razgovor** (radi i bez LLM-a): aplikacija postavlja pitanja redom.
+- **Agent (LLM)**: besplatan model (Groq/Gemini/OpenRouter/Ollama) vodi posao **postupno**, kao asistent:
+  sam bira sledeći korak, pita nastavnika samo ono što ne zna, pokazuje rezultat svakog koraka na potvrdu
+  i posle pravljenja plana pokreće **automatske provere** (zbir = glasnik, nema časova na praznik, pismeni na
+  blok času, ispravke u istom polugodištu, kompetencije po temama…). Brojeve i datume uvek računa kod
+  preko alata (`planer/agent.py`), pa model ne može da pogreši u računu.
+
+**Međupredmetne kompetencije i povezivanje** (`planer/kompetencije.py`): za svaku temu se traže pasusi
+uputstva iz glasnika (citat), ishodi iz glasnika i logička pravila (gde se sadržaj primenjuje, uključujući
+stručne predmete profila); svaki predlog ima izvor i obrazloženje i nastavnik ga potvrđuje.
+
 ## Pokretanje
 ```bash
 pip install -r requirements.txt
@@ -49,6 +61,9 @@ planer/
   glasnik_parser.py         DOCX Pravilnika → programi (bez LLM-a)
   ekstrakcija.py            PDF glasnika → odeljak predmeta → JSON program (LLM)
   pismo.py                  ćirilica ↔ latinica
+  kompetencije.py           MK i predmeti za povezivanje (glasnik + logika, sa obrazloženjem)
+  provera.py                automatske provere gotovog plana
+  agent.py                  agent: LLM vodi korake, alati računaju
   formule.py                x2 → x², log2 → log₂, sqrt → √, <= → ≤
   sadrzaj.py                LLM: nazivi jedinica, ishodi, metode, oblici rada
   intervju.py               razgovor sa nastavnikom (lista pitanja + tumačenje)

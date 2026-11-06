@@ -9,7 +9,9 @@ import streamlit as st
 
 from planer.ekstrakcija import izvuci_program, nedeljni_fond_iz_teksta, pronadji_odeljak, stranice_iz_pdf
 from planer.glasnik_parser import blokovi_iz_docx, naslov_izvora, parsiraj_blokove
+from planer.agent import Agent
 from planer.intervju import Intervju
+from planer.provera import izvestaj
 from planer.izvoz import globalni_docx, operativni_docx, plan_xlsx, preslovi
 from planer.llm import LLM, LLMGreska
 from planer.modeli import MESECI
@@ -53,20 +55,59 @@ with st.sidebar:
     ss.odeljenje = st.text_input("Odeljenje (npr. 3)", ss.get("odeljenje", ""))
     ss.sa_datumima = st.checkbox("Datumi u operativnom planu", ss.get("sa_datumima", False),
                                  help="ZUOV obrazac nema datume; uključite ako ih želite pored naziva jedinice.")
+    ss.rezim = st.radio("Način rada", ["Vođeni razgovor", "Agent (LLM)"], disabled=not llm,
+                        index=1 if llm and ss.get("rezim") != "Vođeni razgovor" else 0,
+                        help="Agent radi postupno kao asistent: sam bira korake, pita šta mu treba i proverava "
+                             "plan. Brojeve uvek računa kod. Potreban je besplatan LLM ključ.")
     if st.button("🔄 Novi plan"):
         for k in list(ss.keys()):
             del ss[k]
         st.rerun()
 
+# ---------------------------------------------------------------- agentski režim
+if ss.rezim == "Agent (LLM)":
+    if "agent" not in ss:
+        ss.agent = Agent(llm)
+        ss.agent_poruke = [("assistant", "Zdravo! Ja sam agent za planiranje. Recite mi za koji predmet, razred i "
+                            "smer pravimo plan i pošaljite glasnik (DOCX) dugmetom ispod — dalje idemo korak po "
+                            "korak, a ja ću pitati sve što mi treba.")]
+    agent: Agent = ss.agent
+    for uloga, tekst in ss.agent_poruke:
+        with st.chat_message(uloga):
+            st.markdown(tekst)
+    with st.expander(f"🧭 Koraci agenta ({len(agent.koraci)})"):
+        st.markdown("\n".join(f"- {k}" for k in agent.koraci) or "—")
+    gl = st.file_uploader("Službeni / prosvetni glasnik (DOCX)", type=["docx"], key="agent_glasnik")
+    if gl is not None and ss.get("agent_glasnik_ime") != gl.name:
+        ss.agent_glasnik_ime = gl.name
+        with st.spinner("Čitam glasnik (bez LLM-a)…"):
+            bl = blokovi_iz_docx(gl.getvalue())
+            agent.posalji_glasnik(parsiraj_blokove(bl), naslov_izvora(bl) or gl.name)
+        ss.agent_poruke.append(("user", f"📎 {gl.name}"))
+        with st.spinner("Agent radi…"):
+            ss.agent_poruke.append(("assistant", agent.korak(f"Poslao sam glasnik: {gl.name}")))
+        st.rerun()
+    if not agent.gotovo:
+        if odg := st.chat_input("Vaš odgovor…"):
+            ss.agent_poruke.append(("user", odg))
+            with st.spinner("Agent radi korak po korak…"):
+                ss.agent_poruke.append(("assistant", agent.korak(odg)))
+            st.rerun()
+        st.stop()
+    iv = agent.iv
+    if ss.plan is None:
+        ss.plan = agent.plan
+    ss.poruke = ss.poruke or [("assistant", "")]
+
 if not ss.poruke:
     postavi_pitanje()
 
 # ---------------------------------------------------------------- razgovor
-for uloga, tekst in ss.poruke:
+for uloga, tekst in (ss.poruke if ss.rezim != "Agent (LLM)" else []):
     with st.chat_message(uloga):
         st.markdown(tekst)
 
-p = iv.trenutno()
+p = iv.trenutno() if ss.rezim != "Agent (LLM)" else None
 if p and p.kljuc == "program":
     pdf = st.file_uploader("Službeni / prosvetni glasnik (DOCX ili PDF)", type=["docx", "pdf"])
     if pdf is not None and ss.get("pdf_ime") != pdf.name and pdf.name.lower().endswith(".docx"):
@@ -145,6 +186,10 @@ if (nap := iv.napomena_rezerve()):
     st.info(nap)
 st.caption(f"Ukupno {gp['ukupno']} časova · " + " · ".join(
     f"{MESECI[m][:3]} {n}" for (g, m), n in gp["ukupno_po_mesecu"].items()))
+provere = iv.provera(casovi)
+with st.expander("🔎 Provera plana — " + ("sve u redu ✅" if all(x[0] == "ok" for x in provere) else
+                                         f"{sum(x[0] != 'ok' for x in provere)} napomena")):
+    st.markdown(izvestaj(provere).replace("\n", "  \n"))
 
 c1, c2 = st.columns(2)
 c1.download_button("⬇️ Globalni plan (.docx)", globalni_docx(program, gp, ss.nastavnik, ss.skola, pismo, iv.napomena_rezerve(), ss.odeljenje,

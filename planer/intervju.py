@@ -337,6 +337,62 @@ def parsiraj_procenat(t: str, s: "Stanje") -> float:
     return v / 100
 
 
+def parsiraj_listu(t: str, s: "Stanje") -> list[str]:
+    if normalizuj(t).strip(" .") in {"", "-", "ne", "nema", "ne znam", "preskoci"}:
+        return []
+    return [x.strip(" .") for x in re.split(r"[,;\n]", t) if x.strip(" .")]
+
+
+def _analiziraj(s: "Stanje") -> None:
+    from .kompetencije import analiziraj_program
+    if not s.get("analizirano"):
+        s["program"] = analiziraj_program(s["program"], s.get("predmeti_odeljenja") or None,
+                                          s.get("strucni_predmeti") or [])
+        s["analizirano"] = True
+
+
+def _tekst_kompetencija(s: "Stanje") -> str:
+    _analiziraj(s)
+    p: Program = s["program"]
+    delovi = []
+    for t in p.teme:
+        obr = "\n".join(f"   · {o}" for o in t.obrazlozenje[:8])
+        delovi.append(f"**{t.redni_broj}. {t.naziv}**\n- MK: {', '.join(t.kompetencije)}\n"
+                      f"- Povezivanje: {', '.join(t.korelacija) or '—'}\n{obr}")
+    return ("Analizirao sam glasnik i sadržaje tema. Predlog **međupredmetnih kompetencija** i **predmeta za "
+            "povezivanje** (uz izvor: glasnik / ishod / logika):\n\n" + "\n\n".join(delovi) +
+            "\n\nDa li je tako? „da“, ili izmene: `4: Fizika, Saobraćajna tehnika` (povezivanje za temu 4), "
+            "`mk 2: komunikacija, saradnja`, `bez 3: Hemija`.")
+
+
+def parsiraj_kompetencije(t: str, s: "Stanje") -> bool:
+    if _da_ne(t) is True:
+        return True
+    p: Program = s["program"]
+    po_rb = {tm.redni_broj: tm for tm in p.teme}
+    izm = False
+    for red in t.splitlines():
+        n = normalizuj(red)
+        m = re.match(r"\s*(mk|bez)?\s*(\d+)\s*[:=]\s*(.+)", red, re.I)
+        if not m or int(m.group(2)) not in po_rb:
+            continue
+        tm = po_rb[int(m.group(2))]
+        lista = [x.strip(" .") for x in re.split(r"[,;]", m.group(3)) if x.strip(" .")]
+        vrsta = (m.group(1) or "").lower()
+        if vrsta == "mk":
+            tm.kompetencije = lista
+        elif vrsta == "bez" or n.startswith("bez"):
+            tm.korelacija = [k for k in tm.korelacija if normalizuj(k) not in {normalizuj(x) for x in lista}]
+        else:
+            tm.korelacija = lista
+        tm.obrazlozenje.append("izmenio nastavnik")
+        izm = True
+    if not izm:
+        raise ValueError("Napišite „da“ ili izmene, npr. `4: Fizika, Saobraćajna tehnika`, "
+                         "`mk 2: komunikacija, saradnja`, `bez 3: Hemija`.")
+    return False
+
+
 def parsiraj_pismo(t: str, s: "Stanje") -> str:
     n = normalizuj(t)
     if n.startswith("c") or "cir" in n:
@@ -392,6 +448,15 @@ PITANJA: list[Pitanje] = [
             parsiraj_opciono),
     Pitanje("zelje", lambda s: "Imate li želje za **metode i oblike rada** ili korelaciju sa drugim "
             "predmetima? (ili „-“)", parsiraj_opciono),
+    Pitanje("strucni_predmeti", lambda s: "Koje **stručne predmete** imaju učenici ovog odeljenja ove godine? "
+            "Treba mi za međupredmetno povezivanje (npr. „Saobraćajna tehnika, Bezbednost saobraćaja“), "
+            "ili „-“.", parsiraj_listu,
+            uslov=lambda s: s.get("tip_skole") == "srednja" and "gimnaz" not in normalizuj(s.get("smer") or "")),
+    Pitanje("predmeti_odeljenja", lambda s: "Koje **opšteobrazovne predmete** učenici imaju ove godine (pored "
+            "vašeg)? Iz glasnika ne može uvek da se zna koje predmete ima baš vaš profil. Napišite ih zarezom "
+            "(npr. „Fizika, Hemija, Računarstvo i informatika“), ili „-“ ako nisu poznati (tada ih predlažem "
+            "logički, a vi potvrdite u sledećem koraku).", parsiraj_listu),
+    Pitanje("kompetencije_ok", lambda s: _tekst_kompetencija(s), parsiraj_kompetencije, potvrda=True),
     Pitanje("pismo", lambda s: "Na kom **pismu** da napravim plan — **ćirilica** ili **latinica**?",
             parsiraj_pismo, format_za_llm="'ćirilica' ili 'latinica'"),
 ]
@@ -525,6 +590,10 @@ class Intervju:
         self.s["kalendar"] = kalendar_za(self.s["skolska_godina"], self.s["tip_skole"], self.s["razred"],
                                          trajanje_srednje=self.s.get("trajanje_srednje", 4) or 4)
         self.s.pop("slotovi")
+
+    def provera(self, casovi) -> list[tuple[str, str]]:
+        from .provera import proveri_plan
+        return proveri_plan(self.s["program"], casovi, self.s["kalendar"], len(self.s.slotovi()))
 
     def napomena_rezerve(self) -> str:
         """Tekst za globalni plan: koji datumi iz kalendara ostaju slobodni (glasnik ima prednost)."""

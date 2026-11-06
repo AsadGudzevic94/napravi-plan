@@ -38,6 +38,19 @@ class Varijanta:
     pismeni_trajanje: int = 1
     pismeni_casova: int = 0  # ukupno sa ispravkama
     fusnote: list[str] = field(default_factory=list)
+    uputstvo: list[str] = field(default_factory=list)  # pasusi uputstva za ostvarivanje programa (ceo predmet)
+
+    def uputstvo_za_razred(self) -> list[str]:
+        """Pasusi uputstva koji se odnose na ovaj razred (između „Drugi razred“ i sledećeg naslova razreda)."""
+        out, u_razredu = [], False
+        for t in self.uputstvo:
+            n = normalizuj(t).strip(" .")
+            if len(t) < 30 and n.endswith("razred"):
+                u_razredu = _razred(t) == self.razred
+                continue
+            if u_razredu:
+                out.append(t)
+        return out or self.uputstvo
 
     def naziv(self) -> str:
         return f"{self.predmet} {self.opis} — {self.razred}. razred, {self.nedeljni_fond:g} č. nedeljno"
@@ -158,6 +171,8 @@ def parsiraj_blokove(blokovi: list[Blok]) -> list[Varijanta]:
                 r = _razred(t) if len(t) < 30 and "razred" in n else None
                 if r:
                     casovi_razred = r
+                    for v in sekcija:
+                        v.uputstvo.append(t)
                     continue
                 m = re.match(r"^(.+?)\s*\((\d+)\)\s*$", t)
                 if m and casovi_razred:
@@ -176,6 +191,8 @@ def parsiraj_blokove(blokovi: list[Blok]) -> list[Varijanta]:
                 for v in sekcija:
                     if t not in v.fusnote:
                         v.fusnote.append(t)
+            for v in sekcija:
+                v.uputstvo.append(t)
             continue
         # tabela
         tab = b.tabela
@@ -272,7 +289,8 @@ def u_program(v: Varijanta, smer: str | None = None, izvor: str = "", tip_skole:
                    smer=smer, nedeljni_fond=v.nedeljni_fond, izvor=izvor, teme=teme,
                    inicijalni_casova=v.inicijalni, pismeni_broj=v.pismeni_broj,
                    pismeni_trajanje=v.pismeni_trajanje,
-                   pismeni_ispravka=v.pismeni_casova > v.pismeni_broj * v.pismeni_trajanje)
+                   pismeni_ispravka=v.pismeni_casova > v.pismeni_broj * v.pismeni_trajanje,
+                   uputstvo=v.uputstvo_za_razred())
 
 
 def naslov_izvora(blokovi: list[Blok]) -> str:

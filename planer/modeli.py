@@ -26,6 +26,9 @@ class Tema(BaseModel):
     casova_utvrdjivanje: int = 0
     casova_ostalo: int = 0  # provere, sistematizacija...
     jedinice: list["NastavnaJedinica"] = Field(default_factory=list)
+    kompetencije: list[str] = Field(default_factory=list)  # međupredmetne kompetencije
+    korelacija: list[str] = Field(default_factory=list)  # predmeti za povezivanje
+    obrazlozenje: list[str] = Field(default_factory=list)  # zašto su izabrane (izvor: glasnik / logika)
 
     @property
     def casova_ukupno(self) -> int:
@@ -53,6 +56,7 @@ class Program(BaseModel):
     pismeni_broj: int = 0  # broj pismenih zadataka u godini
     pismeni_trajanje: int = 1  # časova po pismenom (npr. 2 = dvočas)
     pismeni_ispravka: bool = True  # posle svakog pismenog čas ispravke
+    uputstvo: list[str] = Field(default_factory=list)  # uputstvo za ostvarivanje programa (za ovaj razred)
 
     @model_validator(mode="after")
     def _popuni_godisnji(self) -> "Program":

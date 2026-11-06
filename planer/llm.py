@@ -100,6 +100,24 @@ class LLM:
             return r.json()["choices"][0]["message"]["content"] or ""
         raise LLMGreska(f"{self.provider}: previše zahteva (limit besplatnog plana), probajte kasnije.")
 
+    def chat_alati(self, poruke: list[dict], alati: list[dict], temperatura: float = 0.1,
+                   max_tokena: int = 2048) -> dict:
+        """Jedan korak agenta: model vraća poruku sa tekstom i/ili pozivima alata (OpenAI format)."""
+        telo = {"model": self.model, "messages": poruke, "tools": alati, "tool_choice": "auto",
+                "temperature": temperatura, "max_tokens": max_tokena}
+        zaglavlja = {"Content-Type": "application/json"}
+        if self.kljuc:
+            zaglavlja["Authorization"] = f"Bearer {self.kljuc}"
+        for pokusaj in range(4):
+            r = requests.post(f"{self.url}/chat/completions", json=telo, headers=zaglavlja, timeout=self.timeout)
+            if r.status_code == 429 or r.status_code >= 500:
+                time.sleep(2 ** (pokusaj + 1))
+                continue
+            if r.status_code != 200:
+                raise LLMGreska(f"{self.provider} {r.status_code}: {r.text[:500]}")
+            return r.json()["choices"][0]["message"]
+        raise LLMGreska(f"{self.provider}: previše zahteva (limit besplatnog plana), probajte kasnije.")
+
     def chat_json(self, sistem: str, korisnik: str, **kw) -> dict:
         tekst = self.chat([{"role": "system", "content": sistem},
                            {"role": "user", "content": korisnik}], json_odgovor=True, **kw)

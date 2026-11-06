@@ -27,7 +27,7 @@ def test_ceo_intervju_srednja_bez_llm():
         assert iv.odgovori(o) is None, (iv.pitanje(), o)
     # kalendar ima više časova od 66 → glasnik ima prednost, ne pita ništa
     assert len(iv.s.slotovi()) > 66
-    for o in ["2", "-", "-", "ćirilica"]:
+    for o in ["2", "-", "-", "Fizika, Hemija", "da", "ćirilica"]:
         assert iv.odgovori(o) is None, iv.pitanje()
     assert iv.pitanje() is None
     teme, casovi, nije_stalo = iv.napravi()
@@ -40,7 +40,7 @@ def test_manje_casova_od_glasnika_pita():
               "Kinematika ; 50 ; 30\nDinamika ; 25 ; 11", "da", "ponedeljak, četvrtak", "2026", "da"]:
         assert iv.odgovori(o) is None, (iv.pitanje(), o)
     assert "Šta da uradim" in iv.pitanje()
-    for o in ["1", "0", "-", "-", "latinica"]:
+    for o in ["1", "0", "-", "-", "-", "da", "latinica"]:
         assert iv.odgovori(o) is None
     _, casovi, nije_stalo = iv.napravi()
     assert nije_stalo == 0 and len(casovi) == len(iv.s.slotovi())
@@ -68,3 +68,17 @@ def test_pronadji_odeljak_i_normalizacija():
     od = pronadji_odeljak(strane, "Matematika", 5, max_znakova=1000)
     assert "MATEMATIKA" in od and "Fizika" not in od
     assert nedeljni_fond_iz_teksta("Godišnji fond 144, 4 časa nedeljno") == 4
+
+
+def test_kompetencije_i_povezivanje_iz_razgovora():
+    iv = Intervju()
+    for o in ["srednja", "2", "Matematika", "Tehničar drumskog saobraćaja", "4", "3",
+              "Trigonometrijske funkcije ; 20 ; 11\nKvadratna funkcija ; 13 ; 10", "da",
+              "utorak 1, četvrtak 2", "2026", "da", "0", "-", "-", "Saobraćajna tehnika", "-"]:
+        assert iv.odgovori(o) is None, (iv.pitanje(), o)
+    tekst = iv.pitanje()
+    assert "Saobraćajna tehnika" in tekst and "Fizika" in tekst and "logika" in tekst
+    assert iv.odgovori("2: Fizika") is None
+    assert iv.s["program"].teme[1].korelacija == ["Fizika"]
+    assert iv.odgovori("da") is None
+    assert "pismu" in iv.pitanje()
