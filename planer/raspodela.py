@@ -9,7 +9,26 @@ from typing import Literal
 
 from .modeli import MESECI, Cas, NastavnaJedinica, Program, Tema
 
-Strategija = Literal["proporcionalno", "rezerva", "bez_izmena"]
+Strategija = Literal["glasnik", "proporcionalno", "rezerva", "bez_izmena"]
+
+
+def slotovi_po_glasniku(slotovi: list[date], potrebno: int,
+                        kraj_polugodista: date | None = None) -> tuple[list[date], list[date]]:
+    """Glasnik ima prednost: od svih časova iz kalendara planira se tačno `potrebno`.
+    Višak ostaje slobodan (rezerva za nadoknadu/ponavljanje), na kraju svakog polugodišta
+    srazmerno njegovoj dužini. Vraća (planirani, slobodni)."""
+    visak = len(slotovi) - potrebno
+    if visak <= 0:
+        return list(slotovi), []
+    if kraj_polugodista:
+        prvo = [d for d in slotovi if d <= kraj_polugodista]
+        drugo = [d for d in slotovi if d > kraj_polugodista]
+    else:
+        prvo, drugo = [], list(slotovi)
+    v1, v2 = _najveci_ostatak([float(len(prvo)), float(len(drugo))], visak) if prvo and drugo else (0, visak)
+    planirani = prvo[:len(prvo) - v1] + drugo[:len(drugo) - v2]
+    slobodni = prvo[len(prvo) - v1:] + drugo[len(drugo) - v2:]
+    return planirani, slobodni
 
 
 def _najveci_ostatak(tezine: list[float], ukupno: int, minimum: int = 0) -> list[int]:
@@ -321,14 +340,20 @@ def operativni_plan(casovi: list[Cas], godina: int, mesec: int) -> list[Cas]:
     return [c for c in casovi if c.datum.year == godina and c.datum.month == mesec]
 
 
-def napravi_plan(program: Program, slotovi: list[date], strategija: Strategija = "proporcionalno",
+def napravi_plan(program: Program, slotovi: list[date], strategija: Strategija = "glasnik",
                  broj_provera: int = 0, udeo_obrade: float | None = None,
                  kraj_polugodista: date | None = None) -> tuple[list[Tema], list[Cas], int]:
     """Vraća (teme za globalni plan — uključujući posebne redove, časovi, broj koji nije stao)."""
     teme = program.teme
     if udeo_obrade is not None:
         teme = podeli_obradu_utvrdjivanje(teme, udeo_obrade)
-    teme = uskladi_fond(teme, max(0, len(slotovi) - program.posebnih_casova), strategija)
+    if strategija == "glasnik":
+        if len(slotovi) >= program.ukupno_casova:
+            slotovi, _ = slotovi_po_glasniku(slotovi, program.ukupno_casova, kraj_polugodista)
+        else:  # časova u kalendaru je manje od glasnika → mora da se skrati srazmerno
+            strategija = "proporcionalno"
+    teme = uskladi_fond(teme, max(0, len(slotovi) - program.posebnih_casova),
+                        "bez_izmena" if strategija == "glasnik" else strategija)
     teme = postavi_provere(teme, broj_provera)
     casovi, nije_stalo = rasporedi(teme, slotovi, program, kraj_polugodista=kraj_polugodista)
     posebne = posebne_teme(program)

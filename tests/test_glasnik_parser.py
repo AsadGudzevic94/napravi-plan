@@ -61,9 +61,13 @@ def test_ceo_plan_iz_glasnika_sa_pismenim_na_bloku():
     p = u_program(v, "Tehničar drumskog saobraćaja", tip_skole="srednja")
     k = kalendar_za(2026, "srednja", 2)
     sl = slotovi_casova(k, {1: 1, 3: 2})  # utorak 1, četvrtak blok 2
-    teme, casovi, nije_stalo = napravi_plan(p, sl, "rezerva", udeo_obrade=0.4,
-                                            kraj_polugodista=k.kraj_prvog_polugodista)
-    assert nije_stalo == 0 and len(casovi) == len(sl)
+    teme, casovi, nije_stalo = napravi_plan(p, sl, udeo_obrade=0.4, kraj_polugodista=k.kraj_prvog_polugodista)
+    assert len(sl) > 105
+    assert nije_stalo == 0 and len(casovi) == 105  # glasnik ima prednost nad kalendarom
+    assert sum(t.casova_ukupno for t in teme) == 105
+    # slobodni časovi su na kraju polugodišta, a ne usred godine
+    planirani = {c.datum for c in casovi}
+    assert sl[0] in planirani and casovi[-1].datum < sl[-1]
     pismeni = [c for c in casovi if c.tip == "pismeni"]
     assert len(pismeni) == 8
     for a, b in zip(pismeni[::2], pismeni[1::2]):

@@ -10,7 +10,7 @@ import streamlit as st
 from planer.ekstrakcija import izvuci_program, nedeljni_fond_iz_teksta, pronadji_odeljak, stranice_iz_pdf
 from planer.glasnik_parser import blokovi_iz_docx, naslov_izvora, parsiraj_blokove
 from planer.intervju import Intervju
-from planer.izvoz import globalni_docx, operativni_docx, plan_xlsx
+from planer.izvoz import globalni_docx, operativni_docx, plan_xlsx, preslovi
 from planer.llm import LLM, LLMGreska
 from planer.modeli import MESECI
 from planer.raspodela import RB_INICIJALNI, RB_PISMENI, globalni_plan, meseci_u_godini, operativni_plan, rasporedi
@@ -136,12 +136,15 @@ df = pd.DataFrame([{"R.b.": r["rb"] if 0 < r["rb"] < 900 else "", "Tema": r["tem
                     **{MESECI[m][:3]: r["po_mesecu"][(g, m)] for g, m in gp["meseci"]},
                     "Obrada": r["obrada"], "Utvrđ.": r["utvrdjivanje"], "Ostalo": r["ostalo"],
                     "Ukupno": r["ukupno"]} for r in gp["redovi"]])
+df = df.map(lambda v: preslovi(v, pismo) if isinstance(v, str) else v)
 st.dataframe(df, hide_index=True, width="stretch")
+if (nap := iv.napomena_rezerve()):
+    st.info(nap)
 st.caption(f"Ukupno {gp['ukupno']} časova · " + " · ".join(
     f"{MESECI[m][:3]} {n}" for (g, m), n in gp["ukupno_po_mesecu"].items()))
 
 c1, c2 = st.columns(2)
-c1.download_button("⬇️ Globalni plan (.docx)", globalni_docx(program, gp, ss.nastavnik, ss.skola, pismo),
+c1.download_button("⬇️ Globalni plan (.docx)", globalni_docx(program, gp, ss.nastavnik, ss.skola, pismo, iv.napomena_rezerve()),
                    file_name=f"globalni_{program.predmet}_{program.razred}.docx")
 c2.download_button("⬇️ Ceo plan (.xlsx)", plan_xlsx(program, gp, casovi, pismo),
                    file_name=f"plan_{program.predmet}_{program.razred}.xlsx")
@@ -158,7 +161,8 @@ if llm and st.button("✨ Dopuni ishode, metode, oblike rada i korelaciju"):
 st.dataframe(pd.DataFrame([{"Č.": c.redni_broj, "Datum": c.datum.strftime("%d.%m."), "Tema": c.tema,
                             "Nastavna jedinica": c.jedinica, "Tip": c.tip, "Ishodi": c.ishodi,
                             "Metode": c.metode, "Oblici rada": c.oblici_rada, "Korelacija": c.korelacija}
-                           for c in mesecni]), hide_index=True, width="stretch")
+                           for c in mesecni]).map(lambda v: preslovi(v, pismo) if isinstance(v, str) else v),
+             hide_index=True, width="stretch")
 st.download_button(f"⬇️ Operativni plan — {MESECI[izbor[1]]} (.docx)",
                    operativni_docx(program, mesecni, izbor[1], ss.nastavnik, ss.skola, pismo),
                    file_name=f"operativni_{program.predmet}_{MESECI[izbor[1]]}.docx")

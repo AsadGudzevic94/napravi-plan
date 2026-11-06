@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import re
+from collections import Counter
 from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
@@ -210,13 +211,11 @@ def _datum_dmy(x: str) -> date:
 
 def parsiraj_strategiju(t: str, s: "Stanje") -> str:
     n = normalizuj(t)
-    if "1" in n or "propor" in n:
+    if "1" in n or "propor" in n or "skrat" in n:
         return "proporcionalno"
-    if "2" in n or "rezerv" in n or "sistem" in n:
-        return "rezerva"
-    if "3" in n or "bez" in n:
+    if "2" in n or "bez" in n:
         return "bez_izmena"
-    raise ValueError("Odgovorite sa 1, 2 ili 3.")
+    raise ValueError("Odgovorite sa 1 ili 2.")
 
 
 # ---------------------------------------------------------------- pitanja
@@ -255,13 +254,28 @@ def _tekst_kalendara(s: "Stanje") -> str:
     return (f"**{k.naziv}**\n\n- Početak: {k.pocetak:%d.%m.%Y.}\n- Kraj I polugodišta: "
             f"{k.kraj_prvog_polugodista:%d.%m.%Y.}\n- Kraj nastave: {k.kraj:%d.%m.%Y.}\n{raspusti}\n{dodatni}\n"
             f"- Državni praznici se automatski izuzimaju.\n\n"
-            f"Po ovom kalendaru i vašem rasporedu imate **{len(slotovi)} časova** u godini.\n\n"
+            f"Po ovom kalendaru i vašem rasporedu imate **{len(slotovi)} časova** u godini." +
+            _poruka_fonda(s) + "\n\n"
             "Da li je kalendar tačan? „da“ ili izmene: `kraj 2027-06-04`, `raspust 2027-04-26 2027-05-03`, "
             "`neradni 2027-01-27`.")
 
 
+def _poruka_fonda(s: "Stanje") -> str:
+    p = s.get("program")
+    if not p:
+        return ""
+    n, g = len(s.slotovi()), p.ukupno_casova
+    if n > g:
+        return (f" Glasnik propisuje **{g}** — plan će imati tačno **{g}** časova (glasnik ima prednost), a "
+                f"preostalih {n - g} ostaju slobodni kao rezerva (nadoknada, ponavljanje) na kraju polugodišta.")
+    if n < g:
+        return f" To je **manje** od {g} koliko propisuje glasnik — pitaću vas kako da skratim."
+    return f" To je tačno koliko propisuje glasnik ({g})."
+
+
 def _treba_uskladjivanje(s: "Stanje") -> bool:
-    return len(s.slotovi()) != s["program"].ukupno_casova
+    """Pitamo samo kad časova u kalendaru ima MANJE nego u glasniku; višak se ne planira."""
+    return len(s.slotovi()) < s["program"].ukupno_casova
 
 
 def _samo_ukupno(s: "Stanje") -> bool:
@@ -365,11 +379,11 @@ PITANJA: list[Pitanje] = [
             f"{str((date.today().year if date.today().month >= 7 else date.today().year - 1) + 1)[2:]})",
             parsiraj_godinu, format_za_llm="početna godina, npr. 2026"),
     Pitanje("kalendar_ok", _tekst_kalendara, parsiraj_kalendar, potvrda=True),
-    Pitanje("strategija", lambda s: f"Po kalendaru imate **{len(s.slotovi())}** časova, a program predviđa "
-            f"**{s['program'].ukupno_casova}**. Šta da uradim?\n\n1) **proporcionalno** prilagodim broj časova "
-            "svake teme\n2) **rezerva** — broj časova po temama ostaje kao u glasniku, a višak stavim kao ponavljanje i sistematizaciju na kraj (ako manjka, "
-            "proporcionalno skratim)\n3) **bez izmena** — ostavim kako je u programu",
-            parsiraj_strategiju, uslov=_treba_uskladjivanje, format_za_llm="1, 2 ili 3"),
+    Pitanje("strategija", lambda s: f"Po kalendaru imate samo **{len(s.slotovi())}** časova, a glasnik propisuje "
+            f"**{s['program'].ukupno_casova}**. Šta da uradim?\n\n1) **proporcionalno** skratim svaku temu\n"
+            "2) **bez izmena** — zadržim broj časova iz glasnika, a časovi koji ne stanu ostaju na kraju kao "
+            "neodržani (za nadoknadu)",
+            parsiraj_strategiju, uslov=_treba_uskladjivanje, format_za_llm="1 ili 2"),
     Pitanje("broj_provera", lambda s: ("Koliko **kontrolnih provera** (pored pismenih zadataka) planirate? "
             if s["program"].pismeni_broj else "Koliko **pismenih / kontrolnih provera** planirate tokom godine? ")
             + "(0 ako ih nema; raspodeliću ih ravnomerno po temama)", parsiraj_ceo,
@@ -512,10 +526,25 @@ class Intervju:
                                          trajanje_srednje=self.s.get("trajanje_srednje", 4) or 4)
         self.s.pop("slotovi")
 
+    def napomena_rezerve(self) -> str:
+        """Tekst za globalni plan: koji datumi iz kalendara ostaju slobodni (glasnik ima prednost)."""
+        from .raspodela import slotovi_po_glasniku
+        if self.s.get("strategija", "glasnik") != "glasnik":
+            return ""
+        _, slobodni = slotovi_po_glasniku(self.s.slotovi(), self.s["program"].ukupno_casova,
+                                          self.s["kalendar"].kraj_prvog_polugodista)
+        if not slobodni:
+            return ""
+        return (f"Napomena: plan sadrži {self.s['program'].ukupno_casova} časova, koliko propisuje glasnik. "
+                f"Po kalendaru ima još {len(slobodni)} časova koji nisu planirani (rezerva za nadoknadu i "
+                "ponavljanje): " + ", ".join(
+                    d.strftime("%d.%m.") + (f" ({n} časa)" if n > 1 else "")
+                    for d, n in Counter(slobodni).items()))
+
     def napravi(self):
         """Posle intervjua: (teme, časovi, broj časova koji nisu stali)."""
         return napravi_plan(self.s["program"], self.s.slotovi(),
-                            strategija=self.s.get("strategija", "bez_izmena"),
+                            strategija=self.s.get("strategija", "glasnik"),
                             broj_provera=self.s.get("broj_provera", 0),
                             udeo_obrade=self.s.get("udeo_obrade"),
                             kraj_polugodista=self.s["kalendar"].kraj_prvog_polugodista)

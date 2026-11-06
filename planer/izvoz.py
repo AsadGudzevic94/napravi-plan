@@ -10,7 +10,13 @@ from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font
 
 from .modeli import MESECI, Cas, Program
-from .pismo import preslovi
+from .formule import formatiraj
+from .pismo import preslovi as _preslovi
+
+
+def preslovi(t: str, pismo: str) -> str:
+    """Pismo koje je nastavnik izabrao + ispravno zapisane formule (x², log₂, √, ≤)."""
+    return _preslovi(formatiraj(t), pismo)
 from .raspodela import meseci_u_godini
 
 
@@ -54,7 +60,8 @@ def _tabela(doc: Document, zaglavlje: list[str], redovi: list[list], pismo: str 
                 c.width = Cm(w)
 
 
-def globalni_docx(p: Program, gp: dict, nastavnik: str = "", skola: str = "", pismo: str = "latinica") -> bytes:
+def globalni_docx(p: Program, gp: dict, nastavnik: str = "", skola: str = "", pismo: str = "latinica",
+                  napomena: str = "") -> bytes:
     doc = Document()
     _landscape(doc)
     linije = _zaglavlje(p, "GLOBALNI (GODIŠNJI) PLAN RADA", nastavnik, skola)
@@ -69,6 +76,8 @@ def globalni_docx(p: Program, gp: dict, nastavnik: str = "", skola: str = "", pi
                    sum(r["ostalo"] for r in gp["redovi"]), gp["ukupno"]])
     n_mes = len(gp["meseci"])
     _tabela(doc, zag, redovi, pismo, [1.0, 6.5] + [1.35] * n_mes + [1.3, 1.3, 1.3, 1.6])
+    if napomena:
+        doc.add_paragraph(preslovi(napomena, pismo))
     b = io.BytesIO()
     doc.save(b)
     return b.getvalue()

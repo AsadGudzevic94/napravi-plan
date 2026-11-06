@@ -13,7 +13,9 @@ Cilj, arhitektura i plan razvoja: **[docs/PLAN.md](docs/PLAN.md)**
    pismeni zadaci. PDF čita LLM. Može i ručni unos ili „primer“.
 3. Potvrdite/izmenite teme, nedeljni fond, dane kada držite čas i školski kalendar.
 4. **Kod** (ne LLM) tačno izračuna sve datume časova (praznici, raspusti, pravoslavni Uskrs)
-   i rasporedi teme po mesecima; ako fond ne odgovara kalendaru, vi birate strategiju.
+   i rasporedi teme po mesecima. **Glasnik ima prednost**: plan ima tačno onoliko časova koliko propisuje
+   glasnik; višak časova iz kalendara ostaje slobodan (rezerva, navedeni datumi). Samo ako kalendar ima
+   manje časova, aplikacija pita kako da skrati.
 5. LLM napiše nazive nastavnih jedinica, ishode po času, metode i oblike rada.
 6. Preuzmete **.docx** (globalni i operativni) ili **.xlsx** (sve).
 
@@ -44,6 +46,7 @@ planer/
   glasnik_parser.py         DOCX Pravilnika → programi (bez LLM-a)
   ekstrakcija.py            PDF glasnika → odeljak predmeta → JSON program (LLM)
   pismo.py                  ćirilica ↔ latinica
+  formule.py                x2 → x², log2 → log₂, sqrt → √, <= → ≤
   sadrzaj.py                LLM: nazivi jedinica, ishodi, metode, oblici rada
   intervju.py               razgovor sa nastavnikom (lista pitanja + tumačenje)
   izvoz.py                  DOCX i XLSX

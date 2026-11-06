@@ -25,12 +25,24 @@ def test_ceo_intervju_srednja_bez_llm():
     for o in odgovori:
         assert iv.pitanje() is not None
         assert iv.odgovori(o) is None, (iv.pitanje(), o)
-    # broj časova iz kalendara se razlikuje od 66 → pita za strategiju
-    assert "Šta da uradim" in iv.pitanje()
-    for o in ["1", "2", "-", "-", "ćirilica"]:
-        assert iv.odgovori(o) is None
+    # kalendar ima više časova od 66 → glasnik ima prednost, ne pita ništa
+    assert len(iv.s.slotovi()) > 66
+    for o in ["2", "-", "-", "ćirilica"]:
+        assert iv.odgovori(o) is None, iv.pitanje()
     assert iv.pitanje() is None
     teme, casovi, nije_stalo = iv.napravi()
+    assert nije_stalo == 0 and len(casovi) == 66
+
+
+def test_manje_casova_od_glasnika_pita():
+    iv = Intervju()
+    for o in ["srednja", "II", "Fizika", "gimnazija", "4", "2",
+              "Kinematika ; 50 ; 30\nDinamika ; 25 ; 11", "da", "ponedeljak, četvrtak", "2026", "da"]:
+        assert iv.odgovori(o) is None, (iv.pitanje(), o)
+    assert "Šta da uradim" in iv.pitanje()
+    for o in ["1", "0", "-", "-", "latinica"]:
+        assert iv.odgovori(o) is None
+    _, casovi, nije_stalo = iv.napravi()
     assert nije_stalo == 0 and len(casovi) == len(iv.s.slotovi())
 
 

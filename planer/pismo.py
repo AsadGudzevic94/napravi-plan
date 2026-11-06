@@ -12,7 +12,19 @@ _C2L.update({k.lower(): v.lower() for k, v in list(_C2L.items())})
 _L2C_DIGRAF = {"Lj": "Љ", "LJ": "Љ", "lj": "љ", "Nj": "Њ", "NJ": "Њ", "nj": "њ", "Dž": "Џ", "DŽ": "Џ", "dž": "џ"}
 _L2C = {v: k for k, v in _C2L.items() if len(v) == 1}
 # formule i oznake koje ne treba preslovljavati (x2, sin, cos, log…)
-_ZASTICENO = re.compile(r"\b(?:[xyz]\d?|sin|cos|tg|ctg|log|ln|Word|Excel|PDF|LLM)\b")
+_SLOVO = r"[^\W\d_]"
+_OPER = r"[=<>≤≥+\-−·/^√±]"
+# formule i oznake koje ne treba preslovljavati: funkcije, promenljive sa stepenom/indeksom,
+# x/y/z, i jednoslovne promenljive uz matematički operator („a ≤ b“, „2a + b“)
+_ZASTICENO = re.compile(
+    r"\b(?:sin|cos|tg|ctg|arcsin|arccos|arctg|log|ln|lim|max|min)[₀-₉]*"
+    r"|\b(?:Word|Excel|PDF|LLM)\b"
+    r"|[A-Za-z](?=[⁰¹²³⁴⁵⁶⁷⁸⁹ⁿ⁺⁻₀-₉])"
+    rf"|(?<!{_SLOVO})[xyz](?!{_SLOVO})"
+    rf"|(?<!{_SLOVO})[A-Za-z](?!{_SLOVO})(?=\s*(?:{_OPER}|\)))"
+    rf"|(?<={_OPER})\s*[A-Za-z](?!{_SLOVO})"
+    rf"|(?<=\d)[A-Za-z](?!{_SLOVO})"
+)
 
 
 def u_latinicu(t: str) -> str:
