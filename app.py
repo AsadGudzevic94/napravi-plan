@@ -68,9 +68,7 @@ with st.sidebar:
 if ss.rezim == "Agent (LLM)":
     if "agent" not in ss:
         ss.agent = Agent(llm)
-        ss.agent_poruke = [("assistant", "Zdravo! Ja sam agent za planiranje. Recite mi za koji predmet, razred i "
-                            "smer pravimo plan i pošaljite glasnik (DOCX) dugmetom ispod — dalje idemo korak po "
-                            "korak, a ja ću pitati sve što mi treba.")]
+        ss.agent_poruke = [("assistant", ss.agent.pocetak())]
     agent: Agent = ss.agent
     for uloga, tekst in ss.agent_poruke:
         with st.chat_message(uloga):
@@ -85,7 +83,7 @@ if ss.rezim == "Agent (LLM)":
             agent.posalji_glasnik(parsiraj_blokove(bl), naslov_izvora(bl) or gl.name)
         ss.agent_poruke.append(("user", f"📎 {gl.name}"))
         with st.spinner("Agent radi…"):
-            ss.agent_poruke.append(("assistant", agent.korak(f"Poslao sam glasnik: {gl.name}")))
+            ss.agent_poruke.append(("assistant", agent.korak("")))
         st.rerun()
     if not agent.gotovo:
         if odg := st.chat_input("Vaš odgovor…"):

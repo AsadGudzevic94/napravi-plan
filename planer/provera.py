@@ -26,8 +26,13 @@ def proveri_plan(program: Program, casovi: list[Cas], kalendar: SkolskiKalendar,
               "plan je skraćen na raspoložive časove.", f"Plan ima {len(casovi)} časova, a u kalendaru ih ima "
               f"{broj_slotova}.", "upozorenje")
     else:
-        dodaj(len(casovi) == ukupno, f"Ukupno {len(casovi)} časova — tačno koliko propisuje glasnik.",
-              f"Plan ima {len(casovi)} časova, a glasnik propisuje {ukupno}.")
+        dodaj(len(casovi) == ukupno, f"Ukupno {len(casovi)} časova — tačno koliko propisuje glasnik."
+              if not program.fond_glasnika or program.fond_glasnika == ukupno else
+              f"Ukupno {len(casovi)} časova, kako je nastavnik izmenio program.",
+              f"Plan ima {len(casovi)} časova, a program predviđa {ukupno}.")
+        if program.fond_glasnika and program.fond_glasnika != ukupno:
+            rez.append(("upozorenje", f"Program je izmenjen: {ukupno} časova umesto {program.fond_glasnika} "
+                                      "iz glasnika (izmena nastavnika)."))
 
     po_temi = Counter(c.tema_rb for c in casovi)
     for t in program.teme:

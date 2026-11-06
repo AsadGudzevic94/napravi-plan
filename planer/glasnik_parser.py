@@ -290,7 +290,9 @@ def u_program(v: Varijanta, smer: str | None = None, izvor: str = "", tip_skole:
                    inicijalni_casova=v.inicijalni, pismeni_broj=v.pismeni_broj,
                    pismeni_trajanje=v.pismeni_trajanje,
                    pismeni_ispravka=v.pismeni_casova > v.pismeni_broj * v.pismeni_trajanje,
-                   uputstvo=v.uputstvo_za_razred())
+                   uputstvo=v.uputstvo_za_razred(),
+                   fond_glasnika=sum(t.casova_obrada for t in teme) + v.inicijalni + (
+                       v.pismeni_casova or v.pismeni_broj * v.pismeni_trajanje))
 
 
 def naslov_izvora(blokovi: list[Blok]) -> str:

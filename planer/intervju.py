@@ -167,7 +167,7 @@ def parsiraj_potvrdu_programa(t: str, s: "Stanje") -> bool:
     if not izmenjeno:
         raise ValueError("Napišite „da“ ako je tačno, ili izmene: `3 ; 25` (tema 3 → 25 časova), "
                          "`3 ; 20 ; 5` (obrada ; utvrđivanje), `redosled 2,1,3,...`, `obriši 4`.")
-    p.godisnji_fond = p.zbir_tema
+    p.godisnji_fond = p.ukupno_casova
     return False  # izmenjeno → pitaj ponovo za potvrdu
 
 
@@ -362,7 +362,7 @@ def _tekst_kompetencija(s: "Stanje") -> str:
     return ("Analizirao sam glasnik i sadržaje tema. Predlog **međupredmetnih kompetencija** i **predmeta za "
             "povezivanje** (uz izvor: glasnik / ishod / logika):\n\n" + "\n\n".join(delovi) +
             "\n\nDa li je tako? „da“, ili izmene: `4: Fizika, Saobraćajna tehnika` (povezivanje za temu 4), "
-            "`mk 2: komunikacija, saradnja`, `bez 3: Hemija`.")
+            "`dodaj 3: Fizika`, `mk 2: komunikacija, saradnja`, `bez 3: Hemija`.")
 
 
 def parsiraj_kompetencije(t: str, s: "Stanje") -> bool:
@@ -373,7 +373,7 @@ def parsiraj_kompetencije(t: str, s: "Stanje") -> bool:
     izm = False
     for red in t.splitlines():
         n = normalizuj(red)
-        m = re.match(r"\s*(mk|bez)?\s*(\d+)\s*[:=]\s*(.+)", red, re.I)
+        m = re.match(r"\s*(mk|bez|dodaj)?\s*(\d+)\s*[:=]\s*(.+)", red, re.I)
         if not m or int(m.group(2)) not in po_rb:
             continue
         tm = po_rb[int(m.group(2))]
@@ -381,6 +381,8 @@ def parsiraj_kompetencije(t: str, s: "Stanje") -> bool:
         vrsta = (m.group(1) or "").lower()
         if vrsta == "mk":
             tm.kompetencije = lista
+        elif vrsta == "dodaj":
+            tm.korelacija += [x for x in lista if normalizuj(x) not in {normalizuj(k) for k in tm.korelacija}]
         elif vrsta == "bez" or n.startswith("bez"):
             tm.korelacija = [k for k in tm.korelacija if normalizuj(k) not in {normalizuj(x) for x in lista}]
         else:
@@ -389,7 +391,7 @@ def parsiraj_kompetencije(t: str, s: "Stanje") -> bool:
         izm = True
     if not izm:
         raise ValueError("Napišite „da“ ili izmene, npr. `4: Fizika, Saobraćajna tehnika`, "
-                         "`mk 2: komunikacija, saradnja`, `bez 3: Hemija`.")
+                         "`dodaj 3: Fizika`, `mk 2: komunikacija, saradnja`, `bez 3: Hemija`.")
     return False
 
 

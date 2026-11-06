@@ -18,7 +18,8 @@ import requests
 PROVIDERI = {
     "groq": {
         "url": "https://api.groq.com/openai/v1",
-        "model": "llama-3.3-70b-versatile",
+        "model": "openai/gpt-oss-120b",
+        "rezervni": ["qwen/qwen3.8-27b", "openai/gpt-oss-20b"],
         "kljuc": "GROQ_API_KEY",
     },
     "gemini": {
@@ -80,12 +81,26 @@ class LLM:
         return cls(provider=provider, model=os.environ.get("LLM_MODEL") or cfg["model"],
                    url=os.environ.get("LLM_BASE_URL") or cfg["url"], kljuc=kljuc)
 
+    def _sledeci_model(self) -> bool:
+        """Besplatni provajderi često ukidaju modele — pređi na rezervni ako trenutni ne postoji."""
+        rezervni = [m for m in PROVIDERI.get(self.provider, {}).get("rezervni", []) if m != self.model]
+        probani = getattr(self, "_probani", set())
+        probani.add(self.model)
+        self._probani = probani
+        for m in rezervni:
+            if m not in probani:
+                self.model = m
+                return True
+        return False
+
     def chat(self, poruke: list[dict], json_odgovor: bool = False, temperatura: float = 0.2,
              max_tokena: int = 4096) -> str:
         telo = {"model": self.model, "messages": poruke, "temperature": temperatura,
                 "max_tokens": max_tokena}
         if json_odgovor and self.provider != "ollama":
             telo["response_format"] = {"type": "json_object"}
+        if "gpt-oss" in self.model or "qwen3" in self.model:
+            telo["reasoning_effort"] = "low"  # modeli koji „razmišljaju“: kraće razmišljanje = brže i jeftinije
         zaglavlja = {"Content-Type": "application/json"}
         if self.kljuc:
             zaglavlja["Authorization"] = f"Bearer {self.kljuc}"
@@ -94,6 +109,12 @@ class LLM:
                               timeout=self.timeout)
             if r.status_code == 429 or r.status_code >= 500:  # limit besplatnog plana → sačekaj
                 time.sleep(2 ** (pokusaj + 1))
+                continue
+            if r.status_code == 404 and "model" in r.text and self._sledeci_model():
+                telo["model"] = self.model
+                continue
+            if r.status_code == 400 and "response_format" in telo and "json" in r.text.lower():
+                telo.pop("response_format")  # model nije ispoštovao JSON režim → probaj bez njega
                 continue
             if r.status_code != 200:
                 raise LLMGreska(f"{self.provider} {r.status_code}: {r.text[:500]}")
@@ -112,6 +133,9 @@ class LLM:
             r = requests.post(f"{self.url}/chat/completions", json=telo, headers=zaglavlja, timeout=self.timeout)
             if r.status_code == 429 or r.status_code >= 500:
                 time.sleep(2 ** (pokusaj + 1))
+                continue
+            if r.status_code == 404 and "model" in r.text and self._sledeci_model():
+                telo["model"] = self.model
                 continue
             if r.status_code != 200:
                 raise LLMGreska(f"{self.provider} {r.status_code}: {r.text[:500]}")

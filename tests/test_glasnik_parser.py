@@ -81,3 +81,16 @@ def test_ceo_plan_iz_glasnika_sa_pismenim_na_bloku():
 def test_preslovljavanje():
     assert u_cirilicu("Utvrđivanje: Ljubav i džep, a x2") == "Утврђивање: Љубав и џеп, а x2"
     assert u_latinicu("Њива ЉУБАВ") == "Njiva LjUBAV"
+
+
+def test_izmena_nastavnika_se_prijavljuje():
+    from planer.provera import proveri_plan
+    [v] = izaberi(parsiraj_blokove(blokovi_iz_docx(_mini_glasnik())), "Matematika", 2, 3, 4)
+    p = u_program(v, "TDS", tip_skole="srednja")
+    assert p.fond_glasnika == 105
+    p.teme[0].casova_obrada += 1
+    k = kalendar_za(2026, "srednja", 2)
+    _, casovi, _ = napravi_plan(p, slotovi_casova(k, {1: 1, 3: 2}), kraj_polugodista=k.kraj_prvog_polugodista)
+    rez = proveri_plan(p, casovi, k)
+    assert len(casovi) == 106
+    assert any(s == "upozorenje" and "106 časova umesto 105" in m for s, m in rez)

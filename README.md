@@ -24,11 +24,13 @@ Cilj, arhitektura i plan razvoja: **[docs/PLAN.md](docs/PLAN.md)**
 
 ## Dva načina rada
 - **Vođeni razgovor** (radi i bez LLM-a): aplikacija postavlja pitanja redom.
-- **Agent (LLM)**: besplatan model (Groq/Gemini/OpenRouter/Ollama) vodi posao **postupno**, kao asistent:
-  sam bira sledeći korak, pita nastavnika samo ono što ne zna, pokazuje rezultat svakog koraka na potvrdu
-  i posle pravljenja plana pokreće **automatske provere** (zbir = glasnik, nema časova na praznik, pismeni na
-  blok času, ispravke u istom polugodištu, kompetencije po temama…). Brojeve i datume uvek računa kod
-  preko alata (`planer/agent.py`), pa model ne može da pogreši u računu.
+- **Agent (LLM)** — *kontrolisani agent* (`planer/agent.py`): nastavnik piše slobodno („matematika, 2. razred
+  TDS, 3 časa, utorak 1 i četvrtak blok“), besplatan model iz jedne poruke izvuče sve podatke i prevodi slobodne
+  izmene („kod četvrte teme dodaj saobraćajnu tehniku“) u komande. **Kod vodi korake** istim redosledom kao
+  iskusan asistent i sam ih izvršava (glasnik → kalendar → kompetencije → plan → **15 automatskih provera**),
+  pa nijedan korak ne može da se preskoči, a brojevi su uvek tačni. Proba sa Groq-om
+  (`openai/gpt-oss-120b`): ceo plan za ~25 s, u okviru besplatnog limita.
+  *(Prva verzija gde model sam bira alate se u probi vrtela u krug i trošila limit — zato ovakva podela.)*
 
 **Međupredmetne kompetencije i povezivanje** (`planer/kompetencije.py`): za svaku temu se traže pasusi
 uputstva iz glasnika (citat), ishodi iz glasnika i logička pravila (gde se sadržaj primenjuje, uključujući

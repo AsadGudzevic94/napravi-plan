@@ -57,6 +57,7 @@ class Program(BaseModel):
     pismeni_trajanje: int = 1  # časova po pismenom (npr. 2 = dvočas)
     pismeni_ispravka: bool = True  # posle svakog pismenog čas ispravke
     uputstvo: list[str] = Field(default_factory=list)  # uputstvo za ostvarivanje programa (za ovaj razred)
+    fond_glasnika: int | None = None  # ukupno časova kako piše u glasniku (pre izmena nastavnika)
 
     @model_validator(mode="after")
     def _popuni_godisnji(self) -> "Program":
