@@ -131,7 +131,7 @@ def test_intervju_pronadji_i_izaberi(monkeypatch):
     monkeypatch.setattr(izvori, "proveri_pravilnik", lambda *a, **k: Provera(
         "provereno", "Glasnik 7/2023-3 sadrži program.", Referenca(7, 2023, 3), "url", varijante, "PG 7/2023"))
     iv = Intervju()
-    for o in ["srednja", "2", "Matematika", "Tehničar drumskog saobraćaja", "4", "3"]:
+    for o in ["srednja", "2", "Matematika", "Tehničar drumskog saobraćaja", "3"]:
         assert iv.odgovori(o) is None
     assert "pronađi" in iv.pitanje()
     assert iv.odgovori("pronađi") is None

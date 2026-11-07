@@ -81,6 +81,16 @@ def parsiraj_ceo(t: str, s: Stanje) -> int:
 _DANI_NORM = {normalizuj(d)[:3]: i for i, d in enumerate(DANI[:5])}
 
 
+def trajanje_iz_smera(smer: str | None) -> int | None:
+    """Četvorogodišnji profili se prepoznaju po nazivu (tehničar, gimnazija); ostale pitamo."""
+    t = normalizuj(smer or "")
+    return 4 if any(r in t for r in ("tehnicar", "gimnazij")) else None
+
+
+def opis_rasporeda(raspored: dict[int, int]) -> str:
+    return ", ".join(f"{DANI[d].lower()} {n}" for d, n in sorted(raspored.items()))
+
+
 def parsiraj_raspored(t: str, s: Stanje) -> dict[int, int]:
     """'pon, čet' | 'ponedeljak 2, sreda 1' | 'pon uto sre čet' → {dan: broj_časova}"""
     n = normalizuj(t)
@@ -359,7 +369,7 @@ def _tekst_predloga_glasnika(s: Stanje) -> str:
     return (f"Pronašao sam u zvaničnom katalogu ({s.get('opis_kataloga', 'ZUOV')}) pravilnike koji odgovaraju. "
             "Koji da koristim? Napišite **broj** — preuzeću glasnik i proveriti da zaista sadrži program za vaš "
             "predmet, razred i fond časova.\n\n" + "\n".join(redovi) +
-            "\n\nIli pošaljite svoj fajl dugmetom ispod, ili napišite „ne“.")
+            "\n\nIli pošaljite svoj fajl (polje „glasnik“ ispod), ili napišite „ne“.")
 
 
 def parsiraj_izbor_glasnika(t: str, s: Stanje) -> int:
@@ -587,7 +597,7 @@ class Intervju:
         predlozi, opis = pronadji_predloge(self.s.get("tip_skole", "osnovna"), self.s["razred"], self.s["predmet"],
                                            self.s.get("smer"), self.llm)
         if not predlozi:
-            return f"{opis} Pošaljite glasnik dugmetom ispod ili upišite teme ručno."
+            return f"{opis} Pošaljite glasnik (polje „glasnik“ ispod) ili upišite teme ručno."
         self.s["predlozi_glasnika"] = predlozi
         self.s["opis_kataloga"] = opis
         return None
@@ -600,7 +610,7 @@ class Intervju:
                                     self.s.get("nedeljni_fond"), self.s.get("trajanje_srednje"))
         self.s["provera_glasnika"] = provera
         if provera.status != "provereno":
-            return f"{provera.poruka} Izaberite drugi broj ili pošaljite fajl dugmetom ispod."
+            return f"{provera.poruka} Izaberite drugi broj ili pošaljite fajl (polje „glasnik“ ispod)."
         izvor = provera.naslov or predlog.pravilnik.naziv
         r = provera.referenca
         if r and f"{r.broj}/{r.godina}" not in izvor:
@@ -663,6 +673,9 @@ class Intervju:
             p.smer = p.smer or self.s.get("smer")
             if self.s.get("nedeljni_fond"):
                 p.nedeljni_fond = self.s["nedeljni_fond"]
+        if kljuc == "smer" and "trajanje_srednje" not in self.zavrseno and trajanje_iz_smera(self.s.get("smer")):
+            self.s["trajanje_srednje"] = trajanje_iz_smera(self.s["smer"])  # tehničari i gimnazije: 4 godine
+            self.zavrseno.add("trajanje_srednje")
         if kljuc == "raspored":
             self.s.pop("slotovi")
         if kljuc == "skolska_godina":

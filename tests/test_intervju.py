@@ -19,7 +19,7 @@ def test_rucne_teme():
 
 def test_ceo_intervju_srednja_bez_llm():
     iv = Intervju()
-    odgovori = ["srednja", "II", "Fizika", "gimnazija opšti smer", "4", "2",
+    odgovori = ["srednja", "II", "Fizika", "gimnazija opšti smer", "2",
                 "Kinematika ; 20 ; 10\nDinamika ; 25 ; 11", "da", "ponedeljak, četvrtak",
                 "2026/27", "da"]
     for o in odgovori:
@@ -36,7 +36,7 @@ def test_ceo_intervju_srednja_bez_llm():
 
 def test_manje_casova_od_glasnika_pita():
     iv = Intervju()
-    for o in ["srednja", "II", "Fizika", "gimnazija", "4", "2",
+    for o in ["srednja", "II", "Fizika", "gimnazija", "2",
               "Kinematika ; 50 ; 30\nDinamika ; 25 ; 11", "da", "ponedeljak, četvrtak", "2026", "da"]:
         assert iv.odgovori(o) is None, (iv.pitanje(), o)
     assert "Šta da uradim" in iv.pitanje()
@@ -72,7 +72,7 @@ def test_pronadji_odeljak_i_normalizacija():
 
 def test_kompetencije_i_povezivanje_iz_razgovora():
     iv = Intervju()
-    for o in ["srednja", "2", "Matematika", "Tehničar drumskog saobraćaja", "4", "3",
+    for o in ["srednja", "2", "Matematika", "Tehničar drumskog saobraćaja", "3",
               "Trigonometrijske funkcije ; 20 ; 11\nKvadratna funkcija ; 13 ; 10", "da",
               "utorak 1, četvrtak 2", "2026", "da", "0", "-", "-", "Saobraćajna tehnika", "-"]:
         assert iv.odgovori(o) is None, (iv.pitanje(), o)
@@ -82,3 +82,14 @@ def test_kompetencije_i_povezivanje_iz_razgovora():
     assert iv.s["program"].teme[1].korelacija == ["Fizika"]
     assert iv.odgovori("da") is None
     assert "pismu" in iv.pitanje()
+
+
+def test_trajanje_smera_iz_naziva():
+    from planer.intervju import trajanje_iz_smera
+    assert trajanje_iz_smera("Tehničar drumskog saobraćaja") == 4
+    assert trajanje_iz_smera("Гимназија, општи тип") == 4
+    assert trajanje_iz_smera("automehaničar") is None  # trogodišnji ili nepoznat → pitamo
+    iv = Intervju()
+    for o in ["srednja", "3", "Matematika", "automehaničar"]:
+        iv.odgovori(o)
+    assert "Koliko godina" in iv.pitanje()

@@ -135,8 +135,12 @@ if ss.rezim == AGENT:
         with st.expander(f"Šta je asistent uradio · {len(agent.koraci)} koraka"):
             st.markdown("\n".join(f"- {ocisti(k)}" for k in agent.koraci))
     if not agent.gotovo:
-        gl = None if agent.glasnik else st.file_uploader("Glasnik (DOCX)", type=["docx"], key="agent_glasnik",
-                              help="Pravilnik o programu nastave i učenja, npr. preuzet sa paragraf.rs")
+        gl = None
+        if not agent.glasnik:
+            with st.expander("Imam svoj glasnik (DOCX) — nije obavezno"):
+                gl = st.file_uploader("Glasnik (DOCX)", type=["docx"], key="agent_glasnik",
+                                      label_visibility="collapsed",
+                                      help="Asistent sam pronalazi važeći glasnik; fajl šaljete samo ako želite svoj.")
         if gl is not None and ss.get("agent_glasnik_ime") != gl.name:
             ss.agent_glasnik_ime = gl.name
             with st.spinner("Čitam glasnik…"):

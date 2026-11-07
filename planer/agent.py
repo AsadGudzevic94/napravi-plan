@@ -20,6 +20,7 @@ from dataclasses import dataclass, field
 from .intervju import (
     PITANJA,
     Intervju,
+    opis_rasporeda,
     parsiraj_broj,
     parsiraj_ceo,
     parsiraj_godinu,
@@ -52,6 +53,27 @@ POLJA = {
     "predmeti_odeljenja": ("opšteobrazovni predmeti odeljenja, zarezom ili '-'", parsiraj_listu),
     "pismo": ("'ćirilica' ili 'latinica'", parsiraj_pismo),
 }
+
+NAZIVI_POLJA = {
+    "tip_skole": "škola", "razred": "razred", "predmet": "predmet", "smer": "smer",
+    "trajanje_srednje": "trajanje", "nedeljni_fond": "nedeljno", "raspored": "raspored",
+    "skolska_godina": "školska godina", "udeo_obrade": "obrada", "broj_provera": "kontrolne provere",
+    "udzbenik": "udžbenik", "zelje": "želje", "strucni_predmeti": "stručni predmeti",
+    "predmeti_odeljenja": "predmeti odeljenja", "pismo": "pismo",
+}
+
+
+def _opis_polja(kljuc: str, v) -> str:
+    """Kako je asistent razumeo podatak — rečima za nastavnika, ne kao promenljivu."""
+    if kljuc == "raspored" and isinstance(v, dict):
+        v = opis_rasporeda(v)
+    elif isinstance(v, float) and v.is_integer():
+        v = int(v)
+    elif isinstance(v, list):
+        v = ", ".join(map(str, v)) or "—"
+    dodatak = {"razred": ".", "trajanje_srednje": " god.", "nedeljni_fond": " čas.", "udeo_obrade": " %"}
+    return f"{NAZIVI_POLJA.get(kljuc, kljuc)}: {v}{dodatak.get(kljuc, '')}"
+
 
 # format odgovora za pitanja-potvrde (LLM prevodi slobodan tekst u ovaj format)
 POTVRDE = {
@@ -102,8 +124,9 @@ class Agent:
 
     def pocetak(self) -> str:
         return ("Zdravo! Napišite mi slobodno za koji plan je potreban — npr. „Matematika, srednja stručna, "
-                "2. razred, Tehničar drumskog saobraćaja, 3 časa, utorak 1 i četvrtak blok 2, 2026/27“ — i "
-                "pošaljite glasnik (DOCX). Dalje idemo korak po korak; pitaću samo ono što ne znam.")
+                "2. razred, Tehničar drumskog saobraćaja, 3 časa, utorak 1 i četvrtak blok 2, 2026/27“. "
+                "Važeći glasnik pronalazim sam (ili ga pošaljite kao DOCX). Dalje idemo korak po korak; "
+                "pitaću samo ono što ne znam.")
 
     def korak(self, tekst: str) -> str:
         """Obradi poruku nastavnika, izvrši sve korake za koje ima podataka i vrati sledeće pitanje."""
@@ -140,9 +163,11 @@ class Agent:
                     continue
                 self.iv.zavrseno.add(k)
                 self.iv._posle(k)
-                upisano.append(f"{k} = {self.iv.s[k]}")
+                upisano.append(_opis_polja(k, self.iv.s[k]))
+                if k == "smer" and "trajanje_srednje" in self.iv.zavrseno and "trajanje_srednje" not in izvuceno:
+                    upisano.append(_opis_polja("trajanje_srednje", self.iv.s["trajanje_srednje"]))
             if upisano:
-                self.koraci.append("🧠 Razumeo: " + "; ".join(upisano))
+                self.koraci.append("🧠 Razumeo — " + "; ".join(upisano))
         if trenutno.kljuc in self.iv.zavrseno:  # LLM je već popunio trenutno pitanje
             return []
         greska = self.iv.odgovori(tekst)  # deterministički parser (+ LLM pomoć za format)
